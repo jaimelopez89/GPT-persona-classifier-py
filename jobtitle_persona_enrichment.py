@@ -1,12 +1,7 @@
 import pandas as pd
 import re
 from pathlib import Path
-
-# Function to simulate API call - Replace with actual API call logic
-def ask_chatgpt(prompt):
-    # Placeholder function to represent sending the prompt to an API and getting a response
-    # Implement the actual API call here
-    return "Simulated API response based on the prompt"
+from ask_chatgpt import *
 
 # Function to clean email column
 def filter_emails(df, column_name):
@@ -53,7 +48,7 @@ On the basis of those definitions, please classify these individuals job titles 
 
 
 # Main logic for processing and enriching data
-chunk_size = 150  # Modify this based on rate limits or other considerations
+chunk_size = 150  # Modify this based on rate limits or for debugging
 total_rows = len(df_filtered)
 chunks = [df_filtered[i:i+chunk_size] for i in range(0, total_rows, chunk_size)]
 
