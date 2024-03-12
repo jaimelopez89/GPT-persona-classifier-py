@@ -20,7 +20,7 @@ df = pd.read_csv(path)
 df_filtered = filter_emails(df, 'Email')
 
 # Filter rows where 'Job.Title' is not empty
-df_filtered = df_filtered[df_filtered['Job.Title'].notna()]
+df_filtered = df_filtered[df_filtered['Job Title'].notna()]
 
 # Assuming the definitions and system_prompt are to be used in API calls,
 # these variables would remain as part of the Python script, 
@@ -56,9 +56,9 @@ results = []
 
 for chunk in chunks:
     # Clean and prepare data for API call
-    chunk['Job.Title'] = chunk['Job.Title'].apply(lambda x: re.sub(",", " ", x))
+    chunk['Job Title'] = chunk['Job Title'].apply(lambda x: re.sub(",", " ", x))
     # Prepare the data in the required format for the API call
-    job_titles_table = "\n".join([f"{row['Prospect.Id']},{row['Job.Title']}" for index, row in chunk.iterrows()])
+    job_titles_table = "\n".join([f"{row['Prospect Id']},{row['Job Title']}" for index, row in chunk.iterrows()])
     
     # Here you'd construct the full prompt with 'definition' or 'system_prompt' and the job titles table,
     # then call the API. For example:
