@@ -1,5 +1,6 @@
 import pandas as pd
 import re
+import os.path
 from pathlib import Path
 from ask_chatgpt import *
 
@@ -72,9 +73,12 @@ for chunk in chunks:
 # Combine all results and perform any necessary cleaning or formatting
 final_result = "\n".join(results)
 
+# Define path of dir to save to
+save_path = "C:/Users/Jaime/Documents/Marketing analytics"
+
 # Output results to a file with current date and time in the filename
 from datetime import datetime
-output_filename = datetime.now().strftime("Personas%Y-%m-%d %H%M%S.txt")
+output_filename = os.path.join(save_path, datetime.now().strftime("Personas %Y-%m-%d %H %M %S.txt"))
 
 with open(output_filename, 'w', encoding='utf-8') as file:
     file.write(final_result)
