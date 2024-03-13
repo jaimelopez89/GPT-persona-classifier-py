@@ -5,7 +5,7 @@ from tqdm import tqdm
 from pathlib import Path
 from ask_chatgpt import *
 
-# Function to clean email column
+# Select only rows that contain nonaiveners and no test emails
 def filter_emails(df, column_name):
     df = df[~df[column_name].str.contains("@aiven|test", regex=True)]
     return df
