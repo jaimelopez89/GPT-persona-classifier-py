@@ -1,6 +1,7 @@
 import pandas as pd
 import re
 import os.path
+from tqdm import tqdm
 from pathlib import Path
 from ask_chatgpt import *
 
@@ -53,9 +54,12 @@ chunk_size = 150  # Modify this based on rate limits or for debugging
 total_rows = len(df_filtered)
 chunks = [df_filtered[i:i+chunk_size] for i in range(0, total_rows, chunk_size)]
 
+#Print number of chunks
+print("Number of iterations: ", len(chunks))
+
 results = []
 
-for chunk in chunks:
+for chunk in tqdm(chunks):
     # Clean and prepare data for API call
     chunk['Job Title'] = chunk['Job Title'].apply(lambda x: re.sub(",", " ", x))
     # Prepare the data in the required format for the API call
@@ -66,9 +70,11 @@ for chunk in chunks:
     prompt = definition + job_titles_table
     response = ask_chatgpt(prompt)
        
-    # Process response if necessary and add to results
-    # This example just adds the simulated response
+    # Process response and add to results
     results.append(response)
+
+    # Print loop progress
+
 
 # Combine all results and perform any necessary cleaning or formatting
 final_result = "\n".join(results)
