@@ -77,6 +77,22 @@ for chunk in tqdm(chunks):
 # Combine all results and perform any necessary cleaning or formatting
 final_result = "\n".join(results)
 
+
+# Combine all results into a single DataFrame
+results_dfs = [pd.read_csv(pd.compat.StringIO(result)) for result in results]
+combined_results_df = pd.concat(results_dfs, ignore_index=True)
+
+# Assuming 'Prospect ID' is the name of the column in df_filtered to match on
+# And assuming df_filtered has a 'Prospect ID' column to join on
+reconciled_results = pd.merge(df_filtered, combined_results_df, on="Prospect ID", how="inner")
+
+# reconciled_results now contains the inner join of the original filtered DataFrame and the enriched results
+# You can inspect the DataFrame by printing it or viewing it in your IDE
+print(reconciled_results.head())  # Print the first few rows to check
+
+# To save the reconciled results to a new CSV file:
+reconciled_results.to_csv("reconciled_results.csv", index=False)
+
 # Define path of dir to save to
 save_path = "C:/Users/Jaime/Documents/Marketing analytics"
 
