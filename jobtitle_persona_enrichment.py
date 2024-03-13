@@ -64,8 +64,7 @@ for chunk in tqdm(chunks):
     # Prepare the data in the required format for the API call
     job_titles_table = "\n".join([f"{row['Prospect Id']},{row['Job Title']}" for index, row in chunk.iterrows()])
     
-    # Here you'd construct the full prompt with 'definition' or 'system_prompt' and the job titles table,
-    # then call the API. For example:
+    # Construct the full prompt with 'definition' and job titles table, then call the API
     prompt = definition + job_titles_table
     response = ask_chatgpt(prompt)
        
