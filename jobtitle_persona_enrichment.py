@@ -12,6 +12,7 @@ def filter_emails(df, column_name):
 
 # Load the CSV file
 path = input("Input the absolute path of the input file with prospects and no persona: ")
+
 # Ensure the path string is treated correctly (removing quotes if any)
 path = path.replace('"', '')
 
@@ -24,9 +25,7 @@ df_filtered = filter_emails(df, 'Email')
 # Filter rows where 'Job.Title' is not empty
 df_filtered = df_filtered[df_filtered['Job Title'].notna()]
 
-# Assuming the definitions and system_prompt are to be used in API calls,
-# these variables would remain as part of the Python script, 
-# possibly modified to fit the API's requirements.
+# Persona definition to pass to the API
 
 definition = """You are an assistant with a strong machine learning capability who understands multiple languages including Japanese, and designed to efficiently categorize job titles into one of four distinct customer personas using a sophisticated machine learning approach.
 It leverages techniques like fuzzy matching and similarity search to analyze job titles, focusing on attributes such as industry knowledge, required skills, and typical responsibilities.
@@ -50,7 +49,7 @@ On the basis of those definitions, please classify these individuals job titles 
 
 
 # Main logic for processing and enriching data
-chunk_size = 150  # Modify this based on rate limits or for debugging
+chunk_size = 150  # Modify this based on rate limits or for debugging, 150 fits inside current rate limit
 total_rows = len(df_filtered)
 chunks = [df_filtered[i:i+chunk_size] for i in range(0, total_rows, chunk_size)]
 
