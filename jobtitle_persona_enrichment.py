@@ -1,5 +1,6 @@
 import pandas as pd
 import re
+import io
 import os.path
 from tqdm import tqdm
 from pathlib import Path
@@ -79,7 +80,7 @@ final_result = "\n".join(results)
 
 
 # Combine all results into a single DataFrame
-results_dfs = [pd.read_csv(pd.compat.StringIO(result)) for result in results]
+results_dfs = [pd.read_csv(io.StringIO(result)) for result in results]
 combined_results_df = pd.concat(results_dfs, ignore_index=True)
 
 # Assuming 'Prospect ID' is the name of the column in df_filtered to match on
