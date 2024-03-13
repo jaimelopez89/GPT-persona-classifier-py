@@ -66,7 +66,7 @@ for chunk in chunks:
     response = ask_chatgpt(prompt)
     
     # Simulate API response
-    response = ask_chatgpt(job_titles_table)
+    response = ask_chatgpt(prompt)
     
     # Process response if necessary and add to results
     # This example just adds the simulated response
