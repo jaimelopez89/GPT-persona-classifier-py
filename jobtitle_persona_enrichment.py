@@ -6,7 +6,7 @@ from tqdm import tqdm
 from pathlib import Path
 from ask_chatgpt import *
 
-# Select only rows that contain nonaiveners and no test emails
+# Function to elect only rows that contain nonaiveners and no test emails
 def filter_emails(df, column_name):
     df = df[~df[column_name].str.contains("@aiven|test", regex=True)]
     return df
@@ -25,6 +25,11 @@ df_filtered = filter_emails(df, 'Email')
 
 # Filter rows where 'Job.Title' is not empty
 df_filtered = df_filtered[df_filtered['Job Title'].notna()]
+
+# Keep only useful columns and drop the rest
+cols_to_keep = ["Prospect Id","Email","Job Title"]
+
+df_filtered = df_filtered[cols_to_keep]
 
 # Persona definition to pass to the API
 
@@ -76,23 +81,18 @@ for chunk in tqdm(chunks):
 
 
 # Combine all results and perform any necessary cleaning or formatting
-final_result = "\n".join(results)
+enriched_result = "\n".join(results)
 
 
 # Combine all results into a single DataFrame
-results_dfs = [pd.read_csv(io.StringIO(result)) for result in results]
-combined_results_df = pd.concat(results_dfs, ignore_index=True)
+formatted_results = pd.read_csv(io.StringIO(enriched_result), header=None, names=["Prospect Id", "Job Title", "Persona", "Persona Certainty"])
 
-# Assuming 'Prospect ID' is the name of the column in df_filtered to match on
-# And assuming df_filtered has a 'Prospect ID' column to join on
-reconciled_results = pd.merge(df_filtered, combined_results_df, on="Prospect ID", how="inner")
+# Perform an inner join between formatted_results and df_filtered
+final_result = pd.merge(df_filtered, formatted_results, on="Prospect Id", how="inner")
 
-# reconciled_results now contains the inner join of the original filtered DataFrame and the enriched results
+# The reconciled_results DataFrame now contains the inner join of the two DataFrames
 # You can inspect the DataFrame by printing it or viewing it in your IDE
-print(reconciled_results.head())  # Print the first few rows to check
-
-# To save the reconciled results to a new CSV file:
-reconciled_results.to_csv("reconciled_results.csv", index=False)
+print(final_result.head())  # Print the first few rows to check
 
 # Define path of dir to save to
 save_path = "C:/Users/Jaime/Documents/Marketing analytics"
