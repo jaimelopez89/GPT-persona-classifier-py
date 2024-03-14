@@ -1,11 +1,12 @@
 import pandas as pd
 import re
+import io
 import os.path
 from tqdm import tqdm
 from pathlib import Path
 from ask_chatgpt import *
 
-# Select only rows that contain nonaiveners and no test emails
+# Function to elect only rows that contain nonaiveners and no test emails
 def filter_emails(df, column_name):
     df = df[~df[column_name].str.contains("@aiven|test", regex=True)]
     return df
@@ -24,6 +25,11 @@ df_filtered = filter_emails(df, 'Email')
 
 # Filter rows where 'Job.Title' is not empty
 df_filtered = df_filtered[df_filtered['Job Title'].notna()]
+
+# Keep only useful columns and drop the rest
+cols_to_keep = ["Prospect Id","Email","Job Title"]
+
+df_filtered = df_filtered[cols_to_keep]
 
 # Persona definition to pass to the API
 
@@ -75,7 +81,18 @@ for chunk in tqdm(chunks):
 
 
 # Combine all results and perform any necessary cleaning or formatting
-final_result = "\n".join(results)
+enriched_result = "\n".join(results)
+
+
+# Combine all results into a single DataFrame
+formatted_results = pd.read_csv(io.StringIO(enriched_result), header=None, names=["Prospect Id", "Job Title", "Persona", "Persona Certainty"])
+
+# Perform an inner join between formatted_results and df_filtered
+final_result = pd.merge(df_filtered, formatted_results, on="Prospect Id", how="inner")
+
+# The reconciled_results DataFrame now contains the inner join of the two DataFrames
+# You can inspect the DataFrame by printing it or viewing it in your IDE
+print(final_result.head())  # Print the first few rows to check
 
 # Define path of dir to save to
 save_path = "C:/Users/Jaime/Documents/Marketing analytics"
