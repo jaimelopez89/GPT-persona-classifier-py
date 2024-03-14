@@ -90,18 +90,22 @@ formatted_results = pd.read_csv(io.StringIO(enriched_result), header=None, names
 # Perform an inner join between formatted_results and df_filtered
 final_result = pd.merge(df_filtered, formatted_results, on="Prospect Id", how="inner")
 
-# The reconciled_results DataFrame now contains the inner join of the two DataFrames
-# You can inspect the DataFrame by printing it or viewing it in your IDE
-print(final_result.head())  # Print the first few rows to check
+# Drop duplicate column for Job Title and rename the original to remove the _x
+final_result = final_result.drop(columns="Job Title_y")
+
+final_result.rename(columns={'Job Title_x': 'Job Title'}, inplace=True)
+
+# Print the first few rows to check
+print(final_result.head()) 
 
 # Define path of dir to save to
-save_path = "C:/Users/Jaime/Documents/Marketing analytics"
+save_path = "C:/Users/Jaime/Documents/Marketing analytics/Classified persona output"
 
 # Output results to a file with current date and time in the filename
 from datetime import datetime
-output_filename = os.path.join(save_path, datetime.now().strftime("Personas %Y-%m-%d %H %M %S.txt"))
+output_filename = os.path.join(save_path, datetime.now().strftime("Personas %Y-%m-%d %H %M %S.csv"))
 
-with open(output_filename, 'w', encoding='utf-8') as file:
-    file.write(final_result)
+# Save file to CSV, omitting indices
+final_result.to_csv(output_filename, index=False)
 
 print(f"Output written to {output_filename}")
