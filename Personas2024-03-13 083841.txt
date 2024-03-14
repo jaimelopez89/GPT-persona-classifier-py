@@ -1,4 +1,0 @@
-40114455,Data Architect,Architect,1.00
-43360965,CTO,Executive,1.00
-15460807,Manager  Software Engineering n,IT Manager,0.83
-29641246,CEO,Executive,1.00
