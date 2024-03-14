@@ -42,7 +42,7 @@ The classification is based on the initial input only, without requiring further
 The output columns must be comma-separated and have no leading or trailing symbols. No context will be provided for the output.
 
 The four available personas are:
-- Executive: Hold the highest strategic roles in a company. Responsible for the creation of products/services that support the company's strategy and vision and meet the customer needs. In charge of the cloud and open source strategy of the company. Their titles often contain Chief or Officer, also abbreviated as three-letter acronyms like CEO, CTO, etc.
+- Executive: Hold the highest strategic roles in a company. Responsible for the creation of products/services that support the company's strategy and vision and meet the customer needs. In charge of the cloud and open source strategy of the company. Their titles often contain Chief, President, Vice President or Officer, also abbreviated as three-letter acronyms like CEO, CTO, etc.
 
 - IT Manager: Makes decisions on platform and infrastructure, have budget control and manage a team. They drive cloud migration, IT modernization and transformation efforts. Responsible for automated platform solutions for internal teams. Typical titles include Head/Director/Manager of Cloud, Infrastructure or Engineering.
 
@@ -65,8 +65,11 @@ print("Number of iterations: ", len(chunks))
 results = []
 
 for chunk in tqdm(chunks):
-    # Clean and prepare data for API call
-    chunk['Job Title'] = chunk['Job Title'].apply(lambda x: re.sub(",", " ", x))
+    # Clean and prepare data for API call. Using .loc attribute on df slice to replace in-situ
+    # chunk['Job Title'] = chunk['Job Title'].apply(lambda x: re.sub(",", " ", x))
+    chunk.loc[:, 'Job Title'] = chunk['Job Title'].apply(lambda x: re.sub(",", " ", x))
+
+    
     # Prepare the data in the required format for the API call
     job_titles_table = "\n".join([f"{row['Prospect Id']},{row['Job Title']}" for index, row in chunk.iterrows()])
     
@@ -77,7 +80,6 @@ for chunk in tqdm(chunks):
     # Process response and add to results
     results.append(response)
 
-    # Print loop progress
 
 
 # Combine all results and perform any necessary cleaning or formatting
@@ -92,7 +94,6 @@ final_result = pd.merge(df_filtered, formatted_results, on="Prospect Id", how="i
 
 # Drop duplicate column for Job Title and rename the original to remove the _x
 final_result = final_result.drop(columns="Job Title_y")
-
 final_result.rename(columns={'Job Title_x': 'Job Title'}, inplace=True)
 
 # Print the first few rows to check
