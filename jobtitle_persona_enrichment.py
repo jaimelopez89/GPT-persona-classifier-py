@@ -18,7 +18,7 @@ path = input("Input the absolute path of the input file with prospects and no pe
 path = path.replace('"', '')
 
 # Read the CSV file into a DataFrame
-df = pd.read_csv(path)
+df = pd.read_csv(path, dtype={'Email': str, 'Prospect Id':str, 'First Name':str, 'Last Name':str, 'Email':str, 'Company':str, 'Job Title':str})
 
 # Filter out emails from Aiven and test emails
 df_filtered = filter_emails(df, 'Email')
