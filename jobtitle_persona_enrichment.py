@@ -18,7 +18,7 @@ path = input("Input the absolute path of the input file with prospects and no pe
 path = path.replace('"', '')
 
 # Read the CSV file into a DataFrame
-df = pd.read_csv(path, dtype={'Email': str, 'Prospect Id':str, 'First Name':str, 'Last Name':str, 'Email':str, 'Company':str, 'Job Title':str})
+df = pd.read_csv(path, dtype={'First Name':str, 'Last Name':str, 'Email':str, 'Company':str, 'Job Title':str})
 
 # Filter out emails from Aiven and test emails
 df_filtered = filter_emails(df, 'Email')
@@ -80,7 +80,8 @@ for chunk in tqdm(chunks):
     # Process response and add to results
     results.append(response)
 
-
+# Define valid personas
+valid_personas = ['Executive', 'Architect', 'IT Manager', 'Developer', 'Not a target']
 
 # Combine all results and perform any necessary cleaning or formatting
 enriched_result = "\n".join(results)
@@ -95,6 +96,9 @@ final_result = pd.merge(df_filtered, formatted_results, on="Prospect Id", how="i
 # Drop duplicate column for Job Title and rename the original to remove the _x
 final_result = final_result.drop(columns="Job Title_y")
 final_result.rename(columns={'Job Title_x': 'Job Title'}, inplace=True)
+
+# Sanitize output and keep only valid rows assigned to one of the five correct personas
+final_result = final_result[final_result['Persona'].isin(valid_personas)]
 
 # Print the first few rows to check
 print(final_result.head()) 
