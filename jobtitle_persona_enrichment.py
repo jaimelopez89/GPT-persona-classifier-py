@@ -98,7 +98,13 @@ try:
         print("Warning: Extra columns detected. Only the first four columns will be used.")
 
     # Proceed with using only the required columns
-    formatted_results = pd.read_csv(io.StringIO(enriched_result), header=None, names=["Prospect Id", "Job Title", "Persona", "Persona Certainty"], usecols=[0, 1, 2, 3], dtype={'Prospect Id': str, 'Job Title': str, 'Persona': str, 'Persona Certainty': str})
+    formatted_results = pd.read_csv(io.StringIO(enriched_result), 
+                                    header=None, 
+                                    names=["Prospect Id", "Job Title", "Persona", "Persona Certainty"],
+                                    usecols=[0, 1, 2, 3], 
+                                    dtype={'Prospect Id': str, 'Job Title': str, 'Persona': str, 'Persona Certainty': str},
+                                    error_bad_lines=False,
+                                    warn_bad_lines=True)
 
 except Exception as e:
     print(f"Error processing CSV data: {e}")
