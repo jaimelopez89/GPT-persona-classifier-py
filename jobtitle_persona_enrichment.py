@@ -18,7 +18,7 @@ path = input("Input the absolute path of the input file with prospects and no pe
 path = path.replace('"', '')
 
 # Read the CSV file into a DataFrame
-df = pd.read_csv(path, dtype={'First Name':str, 'Last Name':str, 'Email':str, 'Company':str, 'Job Title':str})
+df = pd.read_csv(path, dtype={'First Name':str, 'Last Name':str, 'Email':str, 'Company':str, 'Job Title':str, 'Prospect Id':str})
 
 # Filter out emails from Aiven and test emails
 df_filtered = filter_emails(df, 'Email')
@@ -34,7 +34,7 @@ df_filtered = df_filtered[cols_to_keep]
 # Persona definition to pass to the API
 
 definition = """You are an assistant with a strong machine learning capability who understands multiple languages including Japanese, and designed to efficiently categorize job titles into one of four distinct customer personas using a sophisticated machine learning approach.
-It leverages techniques like fuzzy matching and similarity search to analyze job titles, focusing on attributes such as industry knowledge, required skills, and typical responsibilities.
+You leverage techniques like fuzzy matching and similarity search to analyze job titles, focusing on attributes such as industry knowledge, required skills, and typical responsibilities.
 You operate by receiving a 2-column table: Prospect ID, Job title. You always return data in a comma-separated, four-column table: Prospect ID, Job title, Persona, Persona Certainty.
 The Prospect ID for each output row must be the same one that was fed as input. This is crucial.
 Persona Certainty must be a number from 0 to 1 with 2 decimals.
@@ -42,20 +42,20 @@ The classification is based on the initial input only, without requiring further
 The output columns must be comma-separated and have no leading or trailing symbols. No context will be provided for the output.
 
 The four available personas are:
-- Executive: Hold the highest strategic roles in a company. Responsible for the creation of products/services that support the company's strategy and vision and meet the customer needs. In charge of the cloud and open source strategy of the company. Their titles often contain Chief, President, Vice President or Officer, also abbreviated as three-letter acronyms like CEO, CTO, etc.
+- Executive: Hold the highest strategic roles in a company. Responsible for the creation of products/services that support the company's strategy and vision and meet the customer needs. In charge of the cloud and open source strategy of the company. Their titles often contain Founder, Owner, Chief, President, Vice President or Officer, also abbreviated as two- or three-letter acronyms like CEO, CTO, SVP, CISO, VP, CIO, CITO etc.
 
-- IT Manager: Makes decisions on platform and infrastructure, have budget control and manage a team. They drive cloud migration, IT modernization and transformation efforts. Responsible for automated platform solutions for internal teams. Typical titles include Head/Director/Manager of Cloud, Infrastructure or Engineering.
+- IT Manager: Makes decisions on platform and infrastructure, have budget control and manage a team. They drive cloud migration, IT modernization and transformation efforts. Responsible for automated platform solutions for internal teams. Typical titles include the words Head, Lead, Director, Senior Director and tend to also contain of Cloud, of Infrastructure or of Engineering. 
 
-- Architect: Specialist in cloud/ platform technologies, provide the “platform as a service” internally to application teams. They participate in business strategy development  making technology a fundamental investment tool to meet the organizations' objectives. Common titles are Cloud Architect, Platform Architect, Data Platform Manager, Principal Engineer
+- Architect: Specialist in cloud/ platform technologies, provide the “platform as a service” internally to application teams. They participate in business strategy development  making technology a fundamental investment tool to meet the organizations' objectives. Common titles contain Architect, Cloud Architect, Platform Architect, Data Platform Manager. 
 
-- Developer: Builds features and applications leveraging data infrastructure. Their typical job titles include Software Engineer, Software Architect and Engineering Manager
+- Developer: Builds features and applications leveraging data infrastructure. Their typical job titles include Engineer, Software Engineer, Engineering Manager, Database, Administrator, SRE, Developer, Senior Engineer, Staff Engineer, Cloud Engineer.
 
 Job titles that do not conform to any of these four classes (e.g. Consultant, Student, Unemployed, and many more) should be classified as Not a target.
 On the basis of those definitions, please classify these individuals job titles by whether they refer to a Developer, an Executive, an IT Manager, an Architect or Not a target. Only 1 category is possible for each job title."""
 
 
 # Main logic for processing and enriching data
-chunk_size = 150  # Modify this based on rate limits or for debugging, 150 fits inside current rate limit
+chunk_size = 200  # Modify this based on rate limits or for debugging, 150 fits inside current rate limit
 total_rows = len(df_filtered)
 chunks = [df_filtered[i:i+chunk_size] for i in range(0, total_rows, chunk_size)]
 
@@ -86,12 +86,35 @@ valid_personas = ['Executive', 'Architect', 'IT Manager', 'Developer', 'Not a ta
 # Combine all results and perform any necessary cleaning or formatting
 enriched_result = "\n".join(results)
 
-
 # Combine all results into a single DataFrame
-formatted_results = pd.read_csv(io.StringIO(enriched_result), header=None, names=["Prospect Id", "Job Title", "Persona", "Persona Certainty"])
+# formatted_results = pd.read_csv(io.StringIO(enriched_result), header=None, names=["Prospect Id", "Job Title", "Persona", "Persona Certainty"], dtype={'Prospect Id':str, 'Persona Certainty':str, 'Persona':str, 'Job Title':str})
+
+try:
+    # Attempt to read without column restrictions
+    df_test = pd.read_csv(io.StringIO(enriched_result), header=None)
+    
+    # Check if there are more than the expected columns
+    if df_test.shape[1] > 4:
+        print("Warning: Extra columns detected. Only the first four columns will be used.")
+
+    # Proceed with using only the required columns
+    formatted_results = pd.read_csv(io.StringIO(enriched_result), header=None, names=["Prospect Id", "Job Title", "Persona", "Persona Certainty"], usecols=[0, 1, 2, 3], dtype={'Prospect Id': str, 'Job Title': str, 'Persona': str, 'Persona Certainty': str})
+
+except Exception as e:
+    print(f"Error processing CSV data: {e}")
+    # Further error handling or recovery actions
+
+
+
+# Test step for visual check
+print(formatted_results.head()) 
+wait = input("Check the head of the formatted results till now. Press Enter to continue.")
 
 # Perform an inner join between formatted_results and df_filtered
 final_result = pd.merge(df_filtered, formatted_results, on="Prospect Id", how="inner")
+
+print(final_result.head()) 
+wait = input("Check the head of the merged output till now. Press Enter to continue.")
 
 # Drop duplicate column for Job Title and rename the original to remove the _x
 final_result = final_result.drop(columns="Job Title_y")
