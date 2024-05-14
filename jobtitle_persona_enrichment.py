@@ -91,7 +91,8 @@ enriched_result = "\n".join(results)
 
 try:
     # Attempt to read without column restrictions
-    df_test = pd.read_csv(io.StringIO(enriched_result), header=None)
+    df_test = pd.read_csv(io.StringIO(enriched_result), header=None,
+                                    on_bad_lines='warn')
     
     # Check if there are more than the expected columns
     if df_test.shape[1] > 4:
@@ -103,8 +104,8 @@ try:
                                     names=["Prospect Id", "Job Title", "Persona", "Persona Certainty"],
                                     usecols=[0, 1, 2, 3], 
                                     dtype={'Prospect Id': str, 'Job Title': str, 'Persona': str, 'Persona Certainty': str},
-                                    error_bad_lines=False,
-                                    warn_bad_lines=True)
+                                    on_bad_lines='warn',
+                                    )
 
 except Exception as e:
     print(f"Error processing CSV data: {e}")
@@ -113,14 +114,15 @@ except Exception as e:
 
 
 # Test step for visual check
-print(formatted_results.head()) 
-wait = input("Check the head of the formatted results till now. Press Enter to continue.")
+# print(formatted_results.head()) 
+# wait = input("Check the head of the formatted results till now. Press Enter to continue.")
 
 # Perform an inner join between formatted_results and df_filtered
 final_result = pd.merge(df_filtered, formatted_results, on="Prospect Id", how="inner")
 
-print(final_result.head()) 
-wait = input("Check the head of the merged output till now. Press Enter to continue.")
+# For debugging & visual inspection
+# print(final_result.head()) 
+# wait = input("Check the head of the merged output till now. Press Enter to continue.")
 
 # Drop duplicate column for Job Title and rename the original to remove the _x
 final_result = final_result.drop(columns="Job Title_y")
