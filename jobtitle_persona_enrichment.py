@@ -83,8 +83,11 @@ for chunk in tqdm(chunks):
 # Define valid personas
 valid_personas = ['Executive', 'Architect', 'IT Manager', 'Developer', 'Not a target']
 
+# Filter out None and empty string values from the results list
+filtered_results = [result for result in results if result]
+
 # Combine all results and perform any necessary cleaning or formatting
-enriched_result = "\n".join(results)
+enriched_result = "\n".join(filtered_results)
 
 # Combine all results into a single DataFrame
 # formatted_results = pd.read_csv(io.StringIO(enriched_result), header=None, names=["Prospect Id", "Job Title", "Persona", "Persona Certainty"], dtype={'Prospect Id':str, 'Persona Certainty':str, 'Persona':str, 'Job Title':str})

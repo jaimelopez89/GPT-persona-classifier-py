@@ -1,9 +1,15 @@
 import requests
 import json
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
 
 # Function to call the GPT API from Python
 def ask_chatgpt(prompt):
-    api_key = "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"  # Don't share this! 😅
+    # api_key = "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"  # Don't share this! 😅
+    api_key = os.getenv("OPENAI_API_KEY")  # Don't share this! 😅
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
