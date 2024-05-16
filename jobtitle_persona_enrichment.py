@@ -147,4 +147,9 @@ output_filename = os.path.join(save_path, datetime.now().strftime("Personas %Y-%
 # Save file to CSV, omitting indices
 final_result.to_csv(output_filename, index=False)
 
+# Provide feedback on how many prospects were enriched
+num_updated_prospects = len(final_result)
+
+print(f"{num_updated_prospects} prospects updated")
+
 print(f"Output written to {output_filename}")
