@@ -5,6 +5,12 @@ import os.path
 from tqdm import tqdm
 from pathlib import Path
 from ask_chatgpt import *
+from pypardot.client import PardotAPI
+
+# Setting up API connectivity
+p = PardotAPI(version=4)  # verion=4 available
+p.setup_salesforce_auth_keys()
+
 
 # Function to elect only rows that contain nonaiveners and no test emails
 def filter_emails(df, column_name):
@@ -147,10 +153,11 @@ output_filename = os.path.join(save_path, datetime.now().strftime("Personas %Y-%
 # Save file to CSV, omitting indices
 final_result.to_csv(output_filename, index=False)
 
-# Provide feedback on how many prospects were enriched
+# Provide feedback on how many prospects were enriched and skipped
 num_updated_prospects = len(final_result)
+num_skipped_prospects = len(total_rows) - num_updated_prospects
 
 print(f"{num_updated_prospects} prospects updated")
+print(f"{num_skipped_prospects} prospects skipped")
 
 print(f"Output written to {output_filename}")
-
