@@ -153,6 +153,11 @@ output_filename = os.path.join(save_path, datetime.now().strftime("Personas %Y-%
 # Save file to CSV, omitting indices
 final_result.to_csv(output_filename, index=False)
 
+# Provide feedback on how many prospects were enriched
+num_updated_prospects = len(final_result)
+
+print(f"{num_updated_prospects} prospects updated")
+
 # Provide feedback on how many prospects were enriched and skipped
 num_updated_prospects = len(final_result)
 num_skipped_prospects = len(total_rows) - num_updated_prospects
