@@ -7,9 +7,10 @@ from pathlib import Path
 from ask_chatgpt import *
 from pypardot.client import PardotAPI
 
-# Setting up API connectivity
-p = PardotAPI(version=4)  # verion=4 available
-p.setup_salesforce_auth_keys()
+
+# Initialize Pardot API wrapper
+# p = PardotAPI(version=4)
+# p.setup_salesforce_auth_keys()
 
 
 # Function to elect only rows that contain nonaiveners and no test emails
