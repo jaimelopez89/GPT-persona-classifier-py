@@ -5,6 +5,12 @@ import os.path
 from tqdm import tqdm
 from pathlib import Path
 from ask_chatgpt import *
+from pypardot.client import PardotAPI
+
+
+# Initialize Pardot API wrapper
+p = PardotAPI(version=4)
+p.setup_salesforce_auth_keys()
 
 
 # Function to elect only rows that contain nonaiveners and no test emails
@@ -150,7 +156,7 @@ final_result.to_csv(output_filename, index=False)
 
 # Provide feedback on how many prospects were enriched and skipped
 num_updated_prospects = len(final_result)
-num_skipped_prospects = len(total_rows) - num_updated_prospects
+num_skipped_prospects = total_rows - num_updated_prospects
 
 print(f"{num_updated_prospects} prospects updated")
 print(f"{num_skipped_prospects} prospects skipped")
