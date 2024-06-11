@@ -2,6 +2,7 @@ import pandas as pd
 import re
 import io
 import os.path
+from dotenv import load_dotenv
 from tqdm import tqdm
 from pathlib import Path
 from ask_chatgpt import *
@@ -20,9 +21,11 @@ vertexai.init(project=project_id, location="us-central1")
 
 model = GenerativeModel(model_name="gemini-1.5-flash-001")
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-# The Gemini 1.5 models are versatile and work with both text-only and multimodal prompts
-model = genai.GenerativeModel('gemini-1.5-flash')
+
+# This is only useful to run with non-workplace Google configurations
+# genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# # The Gemini 1.5 models are versatile and work with both text-only and multimodal prompts
+# model = genai.GenerativeModel('gemini-1.5-flash')
 
 
 
