@@ -69,16 +69,22 @@ Persona Certainty must be a number from 0 to 1 with 2 decimals.
 The classification is based on the initial input only, without requiring further interaction.
 The output columns must be comma-separated and have no leading or trailing symbols. No context will be provided for the output.
 
-The four available personas are:
-- Executive: Hold the highest strategic roles in a company. Responsible for the creation of products/services that support the company's strategy and vision and meet the customer needs. In charge of the cloud and open source strategy of the company. Their titles often contain Founder, Owner, Chief, President, Vice President or Officer, also abbreviated as two- or three-letter acronyms like CEO, CTO, SVP, CISO, VP, CIO, CITO etc.
+The five available personas are:
+- Executive Sponsor: Hold the highest strategic roles in a company. Responsible for the creation of products/services that support the company's strategy and vision and meet the customer needs.
+Typically a C-suite individual who has the final approval of the purchase, and has the ability to say No. They care about the overall financial health of the business and the general risk exposure including security and compliance. 
+In charge of the cloud and open source strategy of the company. Their titles often contain Founder, Owner, Chief, President, Vice President or Officer, also abbreviated as two- or three-letter acronyms like CEO, CTO, SVP, CISO, VP, CIO, CITO etc.
 
-- IT Manager: Makes decisions on platform and infrastructure, have budget control and manage a team. They drive cloud migration, IT modernization and transformation efforts. Responsible for automated platform solutions for internal teams. Typical titles include the words Head, Lead, Director, Senior Director and tend to also contain of Cloud, of Infrastructure or of Engineering. 
+- Economic buyer: The Economic Buyer oversees the budget, funding the initiative or project and is responsible for ensuring successful business outcomes. They are responsible for making sound financial decisions that maximize return on investment (ROI) and minimize total cost of ownership (TCO), while also carefully assessing and mitigating potential risks for security and compliance.
+Typical titles include Senior Vice President, Vice President, Senior Director, Director, Head of Platform/Engineering/Site Reliability Engineering/Data/Analytics/Databases/DevOps/Product
 
-- Architect: Specialist in cloud/ platform technologies, provide the “platform as a service” internally to application teams. They participate in business strategy development  making technology a fundamental investment tool to meet the organizations' objectives. Common titles contain Architect, Cloud Architect, Platform Architect, Data Platform Manager. 
+- Technical Decision Maker: They determine the decision criteria that a solution will be assessed against. They create technical solution strategies within their team and/or organization and will have broad technical expertise.   Functionality of the tech (compatibility, complexity, and sustainability of the solution) is key in their evaluation for new products and tooling. 
+Typical titles include Senior Principal, Principal, Senior and one of the following: Architect, Engineer, Solution Architecture, Site Reliability Engineering, DevOps, Product, Software Development
 
-- Developer: Builds features and applications leveraging data infrastructure. Their typical job titles include Engineer, Software Engineer, Engineering Manager, Database, Administrator, SRE, Developer, Senior Engineer, Staff Engineer, Cloud Engineer.
+- Technical User: Involved in the research, usage, testing, evaluation, implementation, and/or migration of products/solutions. Typically they are the day to day users. Ease of use and automation to enable more building versus maintaining is important for their role. Common titles include Developer, Site Reliability Engineer, Solution Architect, Software Development Engineer, Software Development Manager, DevOps Engineer, Product Manager.
 
-Job titles that do not conform to any of these four classes (e.g. Consultant, Student, Unemployed, and many more) should be classified as Not a target.
+-Business Beneficiary: Business Beneficiaries gain a business benefit from the implementation of the solution. They care about the outcome for their customers, creating efficiency for the business, and look to drive value in their day to day through data. They typically work in departments like Marketing, Sales, People, Finance, Customer Success, Customer Support, Operations, Procurement, Legal
+
+Job titles that do not conform to any of these five classes (e.g. Consultant, Student, Unemployed, and many more) should be classified as Not a target.
 On the basis of those definitions, please classify these individuals job titles by whether they refer to a Developer, an Executive, an IT Manager, an Architect or Not a target. Only 1 category is possible for each job title."""
 
 
@@ -110,7 +116,7 @@ for chunk in tqdm(chunks):
     results.append(response)
 
 # Define valid personas
-valid_personas = ['Executive', 'Architect', 'IT Manager', 'Developer', 'Not a target']
+valid_personas = ['Executive Sponsor', 'Economic Buyer', 'Technical Decision Maker', 'Technical User', 'Business Beneficiary', 'Not a target']
 
 # Filter out None and empty string values from the results list
 filtered_results = [result for result in results if result]
