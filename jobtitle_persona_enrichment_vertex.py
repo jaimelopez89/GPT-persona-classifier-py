@@ -82,15 +82,15 @@ Typical titles include Senior Principal, Principal, Senior and one of the follow
 
 - Technical User: Involved in the research, usage, testing, evaluation, implementation, and/or migration of products/solutions. Typically they are the day to day users. Ease of use and automation to enable more building versus maintaining is important for their role. Common titles include Developer, Site Reliability Engineer, Solution Architect, Software Development Engineer, Software Development Manager, DevOps Engineer, Product Manager.
 
--Business Beneficiary: Business Beneficiaries gain a business benefit from the implementation of the solution. They care about the outcome for their customers, creating efficiency for the business, and look to drive value in their day to day through data. They typically work in departments like Marketing, Sales, People, Finance, Customer Success, Customer Support, Operations, Procurement, Legal
+- Business Beneficiary: Business Beneficiaries gain a business benefit from the implementation of the solution. They care about the outcome for their customers, creating efficiency for the business, and look to drive value in their day to day through data. They typically work in departments like Marketing, Sales, People, Finance, Customer Success, Customer Support, Operations, Procurement, Legal
 
 Job titles that do not conform to any of these five classes (e.g. Consultant, Student, Unemployed, and many more) should be classified as Not a target.
-On the basis of those definitions, please classify these individuals job titles by whether they refer to a Developer, an Executive, an IT Manager, an Architect or Not a target. Only 1 category is possible for each job title."""
+On the basis of those definitions, please classify these individuals job titles by whether they refer to an Executive Sponsor, an Economic buyer, a Technical Decision Maker, a Technical User, a Business Beneficiary or Not a target. Only 1 category is possible for each job title."""
 
 
 # Main logic for processing and enriching data
 # chunk_size = 200  # Modify this based on rate limits or for debugging, 200 fits inside current rate limit for OpenAI GPT 3.5
-chunk_size = 400 # This works well with Vertex!
+chunk_size = 500 # This works well with Vertex!
 total_rows = len(df_filtered)
 chunks = [df_filtered[i:i+chunk_size] for i in range(0, total_rows, chunk_size)]
 
