@@ -169,18 +169,27 @@ final_result.rename(columns={'Job Title_x': 'Job Title'}, inplace=True)
 # Sanitize output and keep only valid rows assigned to one of the five correct personas
 final_result = final_result[final_result['Persona'].isin(valid_personas)]
 
+# Save the results that are skipped for audit
+skipped_result = final_result[~final_result['Persona'].isin(valid_personas)]
+
 # Print the first few rows to check
 print(final_result.head()) 
+print(skipped_result.head()) 
+
 
 # Define path of dir to save to
 save_path = "C:/Users/Jaime/Documents/Marketing analytics/Classified persona output"
+save_path_errors = "C:/Users/Jaime/Documents/Marketing analytics/Persona errors"
 
-# Output results to a file with current date and time in the filename
+
+# Output results to a file with current date and time in the filename. Also setting path for skipped prospects
 from datetime import datetime
 output_filename = os.path.join(save_path, datetime.now().strftime("Personas %Y-%m-%d %H %M %S.csv"))
+output_filename_errors = os.path.join(save_path_errors, datetime.now().strftime("Persona errors %Y-%m-%d %H %M %S.csv"))
 
-# Save file to CSV, omitting indices
+# Save files to CSV, omitting indices
 final_result.to_csv(output_filename, index=False)
+skipped_result.to_csv(output_filename_errors, index=False)
 
 # Provide feedback on how many prospects were enriched and skipped
 num_updated_prospects = len(final_result)
