@@ -170,7 +170,7 @@ final_result.rename(columns={'Job Title_x': 'Job Title'}, inplace=True)
 final_result = final_result[final_result['Persona'].isin(valid_personas)]
 
 # Save the results that are skipped for audit
-skipped_result = final_result[~final_result['Persona'].isin(valid_personas)]
+skipped_result = df_filtered[~df_filtered['Prospect Id'].isin(final_result['Prospect Id'])]
 
 # Print the first few rows to check
 print(final_result.head()) 
