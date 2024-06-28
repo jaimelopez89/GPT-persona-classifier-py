@@ -84,7 +84,7 @@ On the basis of those definitions, please classify these individuals job titles 
 
 # Main logic for processing and enriching data
 # chunk_size = 200  # Modify this based on rate limits or for debugging, 200 fits inside current rate limit for OpenAI GPT 3.5
-chunk_size = 400 # This works well with Vertex!
+chunk_size = 500 # This works well with Vertex!
 total_rows = len(df_filtered)
 chunks = [df_filtered[i:i+chunk_size] for i in range(0, total_rows, chunk_size)]
 
