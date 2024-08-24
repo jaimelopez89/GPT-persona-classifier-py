@@ -90,7 +90,22 @@ On the basis of those definitions, please classify these individuals job titles 
 
 # Main logic for processing and enriching data
 # chunk_size = 200  # Modify this based on rate limits or for debugging, 200 fits inside current rate limit for OpenAI GPT 3.5
+
+#Beware! This affects the failure/skip rate with Vertex
 chunk_size = 500 # This works well with Vertex!
+
+#chunk_size = 500 --> 30% skip rate
+#chunk_size = 300 --> 9% skip rate
+#chunk_size = 200 --> 6% skip rate
+# Ideally we should be able to dynamically adjust the chunk_size so that the total number of skipped prospects would be equal to the 
+# chunk_size, so that they could be taken care of with one additional iteration at the end (with some safety margin)
+# This is not implemented yet, but could be done in the future
+
+# E.g. chunk_size = 0.9 * (total_prospects * skip_rate_at_that_chunk_size)
+#
+
+
+
 total_rows = len(df_filtered)
 chunks = [df_filtered[i:i+chunk_size] for i in range(0, total_rows, chunk_size)]
 
