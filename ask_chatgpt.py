@@ -19,6 +19,9 @@ def ask_chatgpt(prompt):
     data = {
         "model": "gpt-3.5-turbo",
         # "model": "gpt-4o",
+        # "model": "gpt-o1-mini"
+        # "model": "gpt-o1-mini"
+
         "messages": [{"role": "user", "content": prompt}]
     }
     
