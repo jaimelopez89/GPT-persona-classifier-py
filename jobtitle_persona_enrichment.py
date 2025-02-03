@@ -5,6 +5,7 @@ import os.path
 from tqdm import tqdm
 from pathlib import Path
 from ask_chatgpt import *
+from ask_chatgpt_v2 import *
 # from pypardot.client import PardotAPI
 
 
@@ -12,6 +13,9 @@ from ask_chatgpt import *
 # p = PardotAPI(version=4)
 # p.setup_salesforce_auth_keys()
 
+
+# Define LLM to use
+# model = "gpt-4o"
 
 # Function to elect only rows that contain nonaiveners and no test emails
 def filter_emails(df, column_name):
@@ -94,7 +98,13 @@ for chunk in tqdm(chunks):
     
     # Construct the full prompt with 'definition' and job titles table, then call the API
     prompt = definition + job_titles_table
-    response = ask_chatgpt(prompt)
+    # response = ask_chatgpt(prompt)
+    
+    response = ask_chatgpt_v2(
+    system_message = definition,   # The persona definitions and instructions
+    user_message=job_titles_table,      # The chunk of data you want classified
+    model="gpt-3.5-turbo-16k"           # Define mdoel to use 
+    )
        
     # Process response and add to results
     results.append(response)
