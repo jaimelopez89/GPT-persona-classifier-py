@@ -78,7 +78,7 @@ On the basis of those definitions, please classify these individuals job titles 
 
 
 # Main logic for processing and enriching data
-chunk_size = 100  # Modify this based on rate limits or for debugging, 150 fits inside current rate limit
+chunk_size = 150  # Modify this based on rate limits or for debugging, 150 fits inside current rate limit
 total_rows = len(df_filtered)
 chunks = [df_filtered[i:i+chunk_size] for i in range(0, total_rows, chunk_size)]
 
