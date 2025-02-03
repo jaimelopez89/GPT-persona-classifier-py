@@ -5,7 +5,7 @@ import os.path
 from tqdm import tqdm
 from pathlib import Path
 from ask_chatgpt import *
-from ask_chatgpt_v2 import *
+from ask_gpt_v2 import *
 # from pypardot.client import PardotAPI
 
 
@@ -100,7 +100,7 @@ for chunk in tqdm(chunks):
     prompt = definition + job_titles_table
     # response = ask_chatgpt(prompt)
     
-    response = ask_chatgpt_v2(
+    response = ask_gpt_v2(
     system_message = definition,   # The persona definitions and instructions
     user_message=job_titles_table,      # The chunk of data you want classified
     model="gpt-3.5-turbo-16k"           # Define mdoel to use 
@@ -164,7 +164,13 @@ final_result.rename(columns={'Job Title_x': 'Job Title'}, inplace=True)
 final_result = final_result[final_result['Persona'].isin(valid_personas)]
 
 # Print the first few rows to check
-print(final_result.head()) 
+print(final_result.head())
+
+# Display percentage counts per persona for validation
+persona_counts = final_result['Persona'].value_counts(normalize=True) * 100
+print("\n========= Persona Distribution =========")
+for persona, percentage in persona_counts.items():
+    print(f"{persona}: {percentage:.2f}%")
 
 # Define path of dir to save to
 # save_path = "C:/Users/Jaime/Documents/Marketing analytics/Classified persona output" #Windows directory

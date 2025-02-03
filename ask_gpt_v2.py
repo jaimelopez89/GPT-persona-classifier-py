@@ -6,7 +6,7 @@ import os
 
 load_dotenv()
 
-def ask_chatgpt(system_message=None, user_message=None, model="gpt-3.5-turbo"):
+def ask_gpt_v2(system_message=None, user_message=None, model="gpt-3.5-turbo"):
     """
     Calls the OpenAI Chat Completion API, allowing separate system and user messages
     as well as a customizable model.
