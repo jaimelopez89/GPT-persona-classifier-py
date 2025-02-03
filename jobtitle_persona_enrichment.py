@@ -65,20 +65,20 @@ Crucial to securing large software deals. Their titles often contain Founder, Ow
 
 - Data User: End-users of data products, leveraging them to solve immediate business challenges. Might act as citizen data engineers (who create derivative applications) or analysts (purely consume). They use data to provide fast, actionable insights to meet evolving demands. They work closely with Data Product Managers, using and developing these products to meet specific business needs. Sample titles include Business Intelligence Analyst, Customer Experience Citizen Developer, Financial Risk Analyst
 
-- Application Developer: Involved in research, usage, testing, evaluation, implementation, and/or migration of business- critical applications. They focus on general application development, not exclusively on stream processing. Prioritize ease of use and seamless integration of new technologies into their workflows, allowing them to focus more on development rather than maintenance. Sample job titles include Developer, Full-Stack Software Engineer, Microservices Developer, Cloud Application Developer, Software Engineer, SRE.
+- Application Developer: Involved in research, usage, testing, evaluation, implementation, and/or migration of business- critical applications. They focus on general application development, not exclusively on stream processing. Prioritize ease of use and seamless integration of new technologies into their workflows, allowing them to focus more on development rather than maintenance. Sample job titles include Developer, Full-Stack Software Engineer, Microservices Developer, Cloud Application Developer, Software Engineer, SRE, SWE, Site Reliability Engineer, etc.
 
 - Real-time Specialist: Focused on building and maintaining applications specifically designed for real-time data processing. Deeply involved in the operational aspects of stream processing, including scaling applications, ensuring system reliability, and implementing fault- tolerant architectures. Some sample job titles include Streaming Data Engineer, Data Pipeline Architect, Real-Time SRE, Flink Engineer
 
 - Operator/System Administrator: Focused on ensuring that systems, applications, and networks run smoothly, with a focus on performance, uptime, security, and reliability. Responsible for the day-to-day management, maintenance, and optimization of an organization's IT infrastructure.  Typically not responsible for an application's roadmap. SOme example titles may be IT Infrastructure Manager, Administrator, Cloud & Systems Engineer, Senior Systems Administrator, Cloud Infrastructure Admin.
 
-- Technical Decision Maker: Defines the technical requirements and standards for solutions and develops technical strategies. They create technical solution strategies within their team and/or organization and will have broad technical expertise. Some example titles may be Director of Platform Engineering, Chief Architect, Head of Enterprise Architecture
+- Technical Decision Maker: Defines the technical requirements and standards for solutions and develops technical strategies. They create technical solution strategies within their team and/or organization and will have broad technical expertise. Some example titles may be Director of Platform Engineering, Chief Architect, Head of Enterprise Architecture, Manager, etc.
 
 Job titles that do not conform to any of these eight classes (e.g. Consultant, Student, Unemployed, and many more) should be classified as Not a target.
 On the basis of those definitions, please classify these individuals job titles by whether they refer to an Executive Sponsor, an Economic Buyer, a Data Product Owner/Manager, a Data User, an Application Developer, a Real-Time Specialist, an Operator/System Administrator, a Technical Decision Maker or Not a target. Only 1 category is possible for each job title."""
 
 
 # Main logic for processing and enriching data
-chunk_size = 200  # Modify this based on rate limits or for debugging, 150 fits inside current rate limit
+chunk_size = 100  # Modify this based on rate limits or for debugging, 150 fits inside current rate limit
 total_rows = len(df_filtered)
 chunks = [df_filtered[i:i+chunk_size] for i in range(0, total_rows, chunk_size)]
 
@@ -103,7 +103,7 @@ for chunk in tqdm(chunks):
     response = ask_gpt_v2(
     system_message = definition,   # The persona definitions and instructions
     user_message=job_titles_table,      # The chunk of data you want classified
-    model="gpt-3.5-turbo-16k"           # Define mdoel to use 
+    model="gpt-4o-mini"           # Define mdoel to use 
     )
        
     # Process response and add to results
