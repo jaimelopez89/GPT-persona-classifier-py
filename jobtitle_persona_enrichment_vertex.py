@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 from pathlib import Path
 from ask_chatgpt import *
-from pypardot.client import PardotAPI
-import google.generativeai as genai
+# from pypardot.client import PardotAPI
+# import google.generativeai as genai
 import vertexai
 from vertexai.generative_models import GenerativeModel
 
@@ -187,8 +187,13 @@ final_result = final_result[final_result['Persona'].isin(valid_personas)]
 # Save the results that are skipped for audit
 skipped_result = df_filtered[~df_filtered['Prospect Id'].isin(final_result['Prospect Id'])]
 
+# Save the results that are skipped for audit
+skipped_result = df_filtered[~df_filtered['Prospect Id'].isin(final_result['Prospect Id'])]
+
 # Print the first few rows to check
 print(final_result.head()) 
+print(skipped_result.head()) 
+
 print(skipped_result.head()) 
 
 
@@ -196,12 +201,17 @@ print(skipped_result.head())
 save_path = "C:/Users/Jaime/Documents/Marketing analytics/Classified persona output"
 save_path_errors = "C:/Users/Jaime/Documents/Marketing analytics/Persona errors"
 
+save_path_errors = "C:/Users/Jaime/Documents/Marketing analytics/Persona errors"
 
+
+# Output results to a file with current date and time in the filename. Also setting path for skipped prospects
 # Output results to a file with current date and time in the filename. Also setting path for skipped prospects
 from datetime import datetime
 output_filename = os.path.join(save_path, datetime.now().strftime("Personas %Y-%m-%d %H %M %S.csv"))
 output_filename_errors = os.path.join(save_path_errors, datetime.now().strftime("Persona errors %Y-%m-%d %H %M %S.csv"))
+output_filename_errors = os.path.join(save_path_errors, datetime.now().strftime("Persona errors %Y-%m-%d %H %M %S.csv"))
 
+# Save files to CSV, omitting indices
 # Save files to CSV, omitting indices
 final_result.to_csv(output_filename, index=False)
 skipped_result.to_csv(output_filename_errors, index=False)
