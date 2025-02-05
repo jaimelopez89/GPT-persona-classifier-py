@@ -181,4 +181,5 @@ print("\n========= Processing Results =========")
 print(f"{num_updated_prospects} prospects updated")
 print(f"{num_skipped_prospects} prospects skipped")
 
+print("\n")
 print(f"Output written to {output_filename}")
