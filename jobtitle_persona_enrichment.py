@@ -85,12 +85,8 @@ for chunk in tqdm(chunks):
     
     # Prepare the data in the required format for the API call
     job_titles_table = "\n".join([f"{row['Prospect Id']},{row['Job Title']}" for index, row in chunk.iterrows()])
-    
-    # Construct the full prompt with 'definition' and job titles table, then call the API
-    # prompt = definition + job_titles_table
-    # response = ask_chatgpt(prompt)
-    
-    # Ask the LLM using the previously created session
+
+    # Ask the LLM using the previously created session. Model is defined on session creation
     response = ask_chat_session(
         session=session,
         user_message=job_titles_table
@@ -98,14 +94,8 @@ for chunk in tqdm(chunks):
 
     if response:
         results.append(response)
-
-    
-    # response = ask_gpt_v2(
-    # system_message = complete_system_instructions,   # The persona definitions and instructions
-    # user_message=job_titles_table,      # The chunk of data you want classified
-    # model="gpt-4o-mini"           # Define mdoel to use 
-    # )
-       
+   
+      
     # Process response and add to results
     results.append(response)
 
