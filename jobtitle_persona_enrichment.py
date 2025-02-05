@@ -6,6 +6,7 @@ from tqdm import tqdm
 from pathlib import Path
 from ask_chatgpt import *
 from ask_gpt_v2 import *
+from gpt_functions import *
 # from pypardot.client import PardotAPI
 
 
@@ -53,6 +54,18 @@ with open(frame_instructions_path, "r", encoding="utf-8") as f:
 persona_definitions_path = "persona_definitions.txt"  # <-- Adjust path if needed
 with open(persona_definitions_path, "r", encoding="utf-8") as f:
     persona_definitions = f.read()
+    
+# Build full system instructions by joining the two pieces above
+complete_system_instructions = frame_instructions + persona_definitions
+
+# Prepare LLM session (system instructions loaded only once) and store it in the var session
+# This also defines the model to use throughout!
+# This sets the system message in an internal conversation object
+session = create_chat_session(
+    system_message=complete_system_instructions, 
+    model="gpt-3.5-turbo"  # or "gpt-3.5-turbo-16k", "gpt-4", etc.
+)
+
 
 # Main logic for processing and enriching data
 chunk_size = 150  # Modify this based on rate limits or for debugging, 150 fits inside current rate limit
@@ -77,13 +90,21 @@ for chunk in tqdm(chunks):
     # prompt = definition + job_titles_table
     # response = ask_chatgpt(prompt)
     
-    complete_system_instructions = frame_instructions + persona_definitions
-    
-    response = ask_gpt_v2(
-    system_message = complete_system_instructions,   # The persona definitions and instructions
-    user_message=job_titles_table,      # The chunk of data you want classified
-    model="gpt-4o-mini"           # Define mdoel to use 
+    # Ask the LLM using the previously created session
+    response = ask_chat_session(
+        session=session,
+        user_message=job_titles_table
     )
+
+    if response:
+        results.append(response)
+
+    
+    # response = ask_gpt_v2(
+    # system_message = complete_system_instructions,   # The persona definitions and instructions
+    # user_message=job_titles_table,      # The chunk of data you want classified
+    # model="gpt-4o-mini"           # Define mdoel to use 
+    # )
        
     # Process response and add to results
     results.append(response)
