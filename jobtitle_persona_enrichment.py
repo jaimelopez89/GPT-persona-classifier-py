@@ -77,6 +77,9 @@ print("Number of iterations: ", len(chunks))
 
 results = []
 
+# Before chunking
+print(df_filtered[df_filtered.duplicated(subset=["Prospect Id"], keep=False)])
+
 for chunk in tqdm(chunks):
     # Clean and prepare data for API call. Using .loc attribute on df slice to replace in-situ
     # chunk['Job Title'] = chunk['Job Title'].apply(lambda x: re.sub(",", " ", x))
@@ -160,6 +163,10 @@ final_result = pd.merge(df_filtered, formatted_results, on="Prospect Id", how="i
 final_result = final_result.drop(columns="Job Title_y")
 final_result.rename(columns={'Job Title_x': 'Job Title'}, inplace=True)
 
+#The merge a few lines above now somehow produces duplicate rows after the merge (didn't happen on previous versions)
+# Drop duplicate rows in postprocessing
+final_result.drop_duplicates(subset=["Prospect Id"], keep="first", inplace=True)
+
 # Sanitize output and keep only valid rows assigned to one of the five correct personas
 final_result = final_result[final_result['Persona'].isin(valid_personas)]
 
@@ -187,6 +194,7 @@ final_result.to_csv(output_filename, index=False)
 num_updated_prospects = len(final_result)
 num_skipped_prospects = total_rows - num_updated_prospects
 
+print("\n========= Processing Results =========")
 print(f"{num_updated_prospects} prospects updated")
 print(f"{num_skipped_prospects} prospects skipped")
 
