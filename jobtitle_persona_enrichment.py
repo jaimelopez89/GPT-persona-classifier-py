@@ -77,9 +77,6 @@ print("Number of iterations: ", len(chunks))
 
 results = []
 
-# Before chunking
-print(df_filtered[df_filtered.duplicated(subset=["Prospect Id"], keep=False)])
-
 for chunk in tqdm(chunks):
     # Clean and prepare data for API call. Using .loc attribute on df slice to replace in-situ
     # chunk['Job Title'] = chunk['Job Title'].apply(lambda x: re.sub(",", " ", x))
