@@ -14,10 +14,6 @@ from gpt_functions import *
 # p = PardotAPI(version=4)
 # p.setup_salesforce_auth_keys()
 
-
-# Define LLM to use
-# model = "gpt-4o"
-
 # Function to elect only rows that contain non-ververicans and no test emails
 def filter_emails(df, column_name):
     df[column_name] = df[column_name].fillna('').astype(str)
@@ -63,7 +59,7 @@ complete_system_instructions = frame_instructions + persona_definitions
 # This sets the system message in an internal conversation object
 session = create_chat_session(
     system_message=complete_system_instructions, 
-    model="gpt-3.5-turbo"  # or "gpt-3.5-turbo-16k", "gpt-4", etc.
+    model="gpt-4o-mini"  # or "gpt-3.5-turbo-16k", "gpt-4", etc. GPT-3.5-turbo runs into rate limit issues
 )
 
 

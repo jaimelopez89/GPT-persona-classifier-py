@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 1. Creates a session object with system instructions
-def create_chat_session(system_message, model="gpt-3.5-turbo"):
+def create_chat_session(system_message, model="gpt-4o-mini"):
     """
     Initialize a chat session with a single system message.
     Returns a session dict with 'model' and 'messages'.
