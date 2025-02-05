@@ -1,2 +1,4 @@
 requirements
 .env
+persona_definitions.txt
+frame_instructions.txt
