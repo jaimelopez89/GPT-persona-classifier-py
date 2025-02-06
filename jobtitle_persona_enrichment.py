@@ -6,16 +6,13 @@ from tqdm import tqdm
 from pathlib import Path
 from ask_chatgpt import *
 from ask_gpt_v2 import *
+from gpt_functions import *
 # from pypardot.client import PardotAPI
 
 
 # Initialize Pardot API wrapper
 # p = PardotAPI(version=4)
 # p.setup_salesforce_auth_keys()
-
-
-# Define LLM to use
-# model = "gpt-4o"
 
 # Function to elect only rows that contain non-ververicans and no test emails
 def filter_emails(df, column_name):
@@ -53,6 +50,18 @@ with open(frame_instructions_path, "r", encoding="utf-8") as f:
 persona_definitions_path = "persona_definitions.txt"  # <-- Adjust path if needed
 with open(persona_definitions_path, "r", encoding="utf-8") as f:
     persona_definitions = f.read()
+    
+# Build full system instructions by joining the two pieces above
+complete_system_instructions = frame_instructions + persona_definitions
+
+# Prepare LLM session (system instructions loaded only once) and store it in the var session
+# This also defines the model to use throughout!
+# This sets the system message in an internal conversation object
+session = create_chat_session(
+    system_message=complete_system_instructions, 
+    model="gpt-4o-mini"  # or "gpt-3.5-turbo-16k", "gpt-4", etc. GPT-3.5-turbo runs into rate limit issues
+)
+
 
 # Main logic for processing and enriching data
 chunk_size = 150  # Modify this based on rate limits or for debugging, 150 fits inside current rate limit
@@ -72,19 +81,17 @@ for chunk in tqdm(chunks):
     
     # Prepare the data in the required format for the API call
     job_titles_table = "\n".join([f"{row['Prospect Id']},{row['Job Title']}" for index, row in chunk.iterrows()])
-    
-    # Construct the full prompt with 'definition' and job titles table, then call the API
-    # prompt = definition + job_titles_table
-    # response = ask_chatgpt(prompt)
-    
-    complete_system_instructions = frame_instructions + persona_definitions
-    
-    response = ask_gpt_v2(
-    system_message = complete_system_instructions,   # The persona definitions and instructions
-    user_message=job_titles_table,      # The chunk of data you want classified
-    model="gpt-4o-mini"           # Define mdoel to use 
+
+    # Ask the LLM using the previously created session. Model is defined on session creation
+    response = ask_chat_session(
+        session=session,
+        user_message=job_titles_table
     )
-       
+
+    if response:
+        results.append(response)
+   
+      
     # Process response and add to results
     results.append(response)
 
@@ -139,6 +146,10 @@ final_result = pd.merge(df_filtered, formatted_results, on="Prospect Id", how="i
 final_result = final_result.drop(columns="Job Title_y")
 final_result.rename(columns={'Job Title_x': 'Job Title'}, inplace=True)
 
+#The merge a few lines above now somehow produces duplicate rows after the merge (didn't happen on previous versions)
+# Drop duplicate rows in postprocessing
+final_result.drop_duplicates(subset=["Prospect Id"], keep="first", inplace=True)
+
 # Sanitize output and keep only valid rows assigned to one of the five correct personas
 final_result = final_result[final_result['Persona'].isin(valid_personas)]
 
@@ -166,7 +177,9 @@ final_result.to_csv(output_filename, index=False)
 num_updated_prospects = len(final_result)
 num_skipped_prospects = total_rows - num_updated_prospects
 
+print("\n========= Processing Results =========")
 print(f"{num_updated_prospects} prospects updated")
 print(f"{num_skipped_prospects} prospects skipped")
 
+print("\n")
 print(f"Output written to {output_filename}")
