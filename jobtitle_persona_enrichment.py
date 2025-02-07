@@ -1,24 +1,28 @@
 import pandas as pd
+import typer
 import re
 import io
 import os.path
 from tqdm import tqdm
+from dotenv import load_dotenv
 from pathlib import Path
 from ask_chatgpt import *
 from ask_gpt_v2 import *
 from gpt_functions import *
-# from pypardot.client import PardotAPI
 
 
-# Initialize Pardot API wrapper
-# p = PardotAPI(version=4)
-# p.setup_salesforce_auth_keys()
+# app = typer.Typer()
+
+load_dotenv()
 
 # Function to elect only rows that contain non-ververicans and no test emails
 def filter_emails(df, column_name):
     df[column_name] = df[column_name].fillna('').astype(str)
     df = df[~df[column_name].str.contains("@ververica|test", regex=True)]
     return df
+
+# @app.command
+# def main():
 
 # Load the CSV file
 path = input("Input the absolute path of the input file with prospects and no persona: ")
@@ -90,8 +94,8 @@ for chunk in tqdm(chunks):
 
     if response:
         results.append(response)
-   
-      
+
+    
     # Process response and add to results
     results.append(response)
 
@@ -183,3 +187,7 @@ print(f"{num_skipped_prospects} prospects skipped")
 
 print("\n")
 print(f"Output written to {output_filename}")
+
+    # if __name__ == "__main__":
+    #     main()
+    #     # app()
