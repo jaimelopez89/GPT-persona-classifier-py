@@ -30,8 +30,24 @@ path = input("Input the absolute path of the input file with prospects and no pe
 # Ensure the path string is treated correctly (removing quotes if any)
 path = path.replace('"', '')
 
+# Read the CSV file into a DataFrame, forcing all columns to string type initially
+df = pd.read_csv(path, dtype=str)
+
+# If the CSV has "Record ID" as a column, rename it to "Prospect Id". This adds OOB compatibility with Hubspot exports
+if "Record ID" in df.columns:
+    df.rename(columns={"Record ID": "Prospect Id"}, inplace=True)
+    
+# These are the columns we want to ensure are strings:
+cols_to_convert = ["Prospect Id", "Job Title", "First Name", "Last Name", "Email", "Company"]
+
+# Filter out any columns that might not be in the DataFrame
+cols_in_df = [col for col in cols_to_convert if col in df.columns]
+
+# Convert them all to string in one shot
+df[cols_in_df] = df[cols_in_df].astype(str)
+
 # Read the CSV file into a DataFrame
-df = pd.read_csv(path, dtype={'First Name':str, 'Last Name':str, 'Email':str, 'Company':str, 'Job Title':str, 'Prospect Id':str})
+# df = pd.read_csv(path, dtype={'First Name':str, 'Last Name':str, 'Email':str, 'Company':str, 'Job Title':str, 'Prospect Id':str})
 
 # Filter out emails from Ververica and test emails
 df_filtered = filter_emails(df, 'Email')
