@@ -1,4 +1,3 @@
-import pandas as pd
 import re
 import io
 import os.path
@@ -6,8 +5,9 @@ from tqdm import tqdm
 from dotenv import load_dotenv
 # from ask_chatgpt import *
 # from ask_gpt_v2 import *
+import pandas as pd
 from gpt_functions import *
-import gpt_functions
+# import gpt_functions
 
 
 # app = typer.Typer()
