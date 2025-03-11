@@ -45,7 +45,8 @@ def ask_chat_session(session, user_message):
         response = requests.post(
             "https://api.openai.com/v1/chat/completions",
             headers=headers,
-            json=data
+            json=data,
+            timeout=60
         )
         if response.status_code == 200:
             response_text = response.json()['choices'][0]['message']['content'].strip()
@@ -56,6 +57,15 @@ def ask_chat_session(session, user_message):
             print(f"Error: Received response code {response.status_code}")
             print(response.text)
             return None
-    except Exception as e:
-        print(f"Error while calling OpenAI API: {e}")
+    
+    except requests.exceptions.Timeout as te:
+        print(f"Timeout error: {te}")
+        return None
+
+    except requests.exceptions.HTTPError as he:
+        print(f"HTTP error: {he}")
+        return None
+
+    except requests.exceptions.RequestException as re:
+        print(f"Request error: {re}")
         return None

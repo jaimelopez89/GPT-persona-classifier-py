@@ -4,9 +4,10 @@ import io
 import os.path
 from tqdm import tqdm
 from dotenv import load_dotenv
-from ask_chatgpt import *
-from ask_gpt_v2 import *
+# from ask_chatgpt import *
+# from ask_gpt_v2 import *
 from gpt_functions import *
+import gpt_functions
 
 
 # app = typer.Typer()
@@ -82,9 +83,9 @@ session = create_chat_session(
 
 
 # Main logic for processing and enriching data
-chunk_size = 150  # Modify this based on rate limits or for debugging, 150 fits inside current rate limit
+CHUNK_SIZE = 150  # Modify this based on rate limits or for debugging, 150 fits inside current rate limit
 total_rows = len(df_filtered)
-chunks = [df_filtered[i:i+chunk_size] for i in range(0, total_rows, chunk_size)]
+chunks = [df_filtered[i:i+CHUNK_SIZE] for i in range(0, total_rows, CHUNK_SIZE)]
 
 #Print number of chunks
 print("Number of iterations: ", len(chunks))
