@@ -1,11 +1,9 @@
 import pandas as pd
-import typer
 import re
 import io
 import os.path
 from tqdm import tqdm
 from dotenv import load_dotenv
-from pathlib import Path
 from ask_chatgpt import *
 from ask_gpt_v2 import *
 from gpt_functions import *
