@@ -1,6 +1,7 @@
 import re
 import io
 import os.path
+from datetime import datetime
 from tqdm import tqdm
 from dotenv import load_dotenv
 # from ask_chatgpt import *
@@ -186,7 +187,6 @@ for persona, percentage in persona_counts.items():
 save_path = "/Users/Jaime/Documents/Classified Persona Output" #Mac directory
 
 # Output results to a file with current date and time in the filename
-from datetime import datetime
 output_filename = os.path.join(save_path, datetime.now().strftime("Personas %Y-%m-%d %H %M %S.csv"))
 
 # Save file to CSV, omitting indices
