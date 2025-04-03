@@ -153,7 +153,7 @@ save_path = "/Users/Jaime/Documents/Classified Persona Output"  # Adjust for you
 save_path_skipped = "/Users/Jaime/Documents/Classified Persona Output/Skipped prospects"  # Adjust for your OS
 
 output_filename = os.path.join(save_path, datetime.now().strftime("Personas %Y-%m-%d %H %M %S.csv"))
-skipped_filename = os.path.join(save_path, datetime.now().strftime("Skipped prospects %Y-%m-%d %H %M %S.csv"))
+skipped_filename = os.path.join(save_path_skipped, datetime.now().strftime("Skipped prospects %Y-%m-%d %H %M %S.csv"))
 
 # Save the accepted prospects to a CSV file
 final_result.to_csv(output_filename, index=False)
