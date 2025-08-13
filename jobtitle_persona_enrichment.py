@@ -94,9 +94,9 @@ except Exception as e:
 
 # Define valid personas
 valid_personas = [
-    'Executive Sponsor', 'Economic Buyer', 'Data Product Owner/Manager', 
+    'Executive Sponsor', 'Economic Buyer', 'Data Product Manager/Owner', 
     'Data User', 'Application Developer', 'Real-time Specialist', 
-    'Operator/System Administrator', 'Technical Decision Maker', 'Not a target'
+    'Operator/Systems Administrator', 'Technical Decision Maker', 'Not a target'
 ]
 
 # Merge the original prospects with the enrichment results using a left merge
