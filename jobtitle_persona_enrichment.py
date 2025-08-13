@@ -47,11 +47,11 @@ complete_system_instructions = frame_instructions + persona_definitions
 # Prepare the LLM session
 session = create_chat_session(
     system_message=complete_system_instructions, 
-    model="gpt-4o-mini"  # or "gpt-3.5-turbo-16k", "gpt-4", etc.
+    model="gpt-4.1-nano"  # or "gpt-3.5-turbo-16k", "gpt-4", etc.
 )
 
 # Process the prospects in chunks for enrichment
-CHUNK_SIZE = 150  # Adjust as needed
+CHUNK_SIZE = 100  # Adjust as needed
 total_rows = len(df_filtered)
 chunks = [df_filtered[i:i+CHUNK_SIZE] for i in range(0, total_rows, CHUNK_SIZE)]
 print("Number of iterations: ", len(chunks))
