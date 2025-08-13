@@ -46,7 +46,7 @@ def ask_chat_session(session, user_message):
             "https://api.openai.com/v1/chat/completions",
             headers=headers,
             json=data,
-            timeout=60
+            timeout=120
         )
         if response.status_code == 200:
             response_text = response.json()['choices'][0]['message']['content'].strip()
