@@ -47,8 +47,8 @@ complete_system_instructions = frame_instructions + persona_definitions
 # Prepare the LLM session
 session = create_chat_session(
     system_message=complete_system_instructions, 
-    model="gpt-4o-mini"  # or "gpt-3.5-turbo-16k", "gpt-4", etc.
-    # model="gpt-4.1-nano"  # or "gpt-3.5-turbo-16k", "gpt-4", etc.
+    # model="gpt-4o-mini"  # or "gpt-3.5-turbo-16k", "gpt-4", etc.
+    model="gpt-4.1-nano"  # or "gpt-3.5-turbo-16k", "gpt-4", etc.
 )
 
 # Process the prospects in chunks for enrichment
