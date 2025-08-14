@@ -1,3 +1,8 @@
+"""This is the main module that structures the Prospect and Job Title tables
+   and submits them to the LLM using gpt_functions.py
+   Jaime López, 2025
+"""
+
 import re
 import io
 import os.path
@@ -6,6 +11,9 @@ from tqdm import tqdm
 from dotenv import load_dotenv
 import pandas as pd
 from gpt_functions import *
+import time
+import random
+import math
 
 load_dotenv()
 
@@ -51,25 +59,103 @@ session = create_chat_session(
     model="gpt-4.1-nano"  # or "gpt-3.5-turbo-16k", "gpt-4", etc.
 )
 
-# Process the prospects in chunks for enrichment
-CHUNK_SIZE = 100  # Adjust as needed
-total_rows = len(df_filtered)
-chunks = [df_filtered[i:i+CHUNK_SIZE] for i in range(0, total_rows, CHUNK_SIZE)]
-print("Number of iterations: ", len(chunks))
+# ===== Adaptive chunking, pacing, and robust retries =====
+# Conservative budget to avoid 429s for tokens per minute (TPM)
+TARGET_TPM_BUDGET = 360_000   # tokens per minute budget
+BASE_SLEEP_SEC = 1.5          # base sleep used in pacing
+MAX_RETRIES = 6               # total attempts per API call
+INITIAL_BACKOFF = 2.0         # seconds; grows exponentially with jitter
+MAX_BACKOFF = 30.0            # cap between retries
+MIN_CHUNK = 10                # do not go below this many rows per chunk
+MAX_CHUNK = 100               # do not go above this many rows per chunk
+SAFETY_TOKEN_PER_ROW = 120    # rough token estimate per row
 
-# Collect responses from the LLM API
+total_rows = len(df_filtered)
+print("Total rows:", total_rows)
+
+current_chunk_size = min(MAX_CHUNK, 80)
 results = []
-for chunk in tqdm(chunks):
-    # Clean Job Title values
-    chunk.loc[:, 'Job Title'] = chunk['Job Title'].apply(lambda x: re.sub(",", " ", x))
-    # Prepare data in the required format for the API call
-    job_titles_table = "\n".join([f"{row['Prospect Id']},{row['Job Title']}" for index, row in chunk.iterrows()])
-    response = ask_chat_session(
-        session=session,
-        user_message=job_titles_table
-    )
-    if response:
-        results.append(response)
+
+def estimate_tokens(num_rows: int) -> int:
+    # Very rough estimate: each row contributes ~SAFETY_TOKEN_PER_ROW tokens
+    return num_rows * SAFETY_TOKEN_PER_ROW
+
+def extract_retry_after_seconds(msg: str) -> float:
+    # Try to parse a suggested wait time from the API error message, e.g. "try again in 12.1s"
+    m = re.search(r"try again in ([0-9]+\.[0-9]+|[0-9]+)s", msg)
+    if m:
+        try:
+            return float(m.group(1))
+        except Exception:
+            return 0.0
+    return 0.0
+
+def call_with_retries(payload_text: str, chunk_size: int):
+    """Call the API with retries. Returns (response_text, updated_chunk_size)."""
+    local_chunk_size = chunk_size
+    last_err = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            resp = ask_chat_session(
+                session=session,
+                user_message=payload_text
+            )
+            return resp, local_chunk_size
+        except Exception as e:
+            msg = str(e)
+            last_err = e
+            server_wait = extract_retry_after_seconds(msg)
+            backoff = min(MAX_BACKOFF, (INITIAL_BACKOFF * (2 ** attempt)) + random.uniform(0, 1.0))
+            sleep_for = max(server_wait, backoff)
+
+            # If rate limited, reduce chunk size to lower token pressure
+            if "rate limit" in msg.lower() or "429" in msg:
+                new_size = max(MIN_CHUNK, math.floor(local_chunk_size / 2))
+                if new_size < local_chunk_size:
+                    print(f"Rate limit detected. Reducing chunk size {local_chunk_size} -> {new_size} and retrying in {sleep_for:.1f}s")
+                    local_chunk_size = new_size
+                else:
+                    print(f"Rate limit detected. Retrying in {sleep_for:.1f}s with chunk size {local_chunk_size}")
+            else:
+                print(f"Error: {msg}. Retrying in {sleep_for:.1f}s")
+
+            time.sleep(sleep_for)
+    # Exhausted retries
+    raise last_err
+
+i = 0
+with tqdm(total=total_rows) as pbar:
+    while i < total_rows:
+        end_i = min(i + current_chunk_size, total_rows)
+        chunk = df_filtered.iloc[i:end_i].copy()
+
+        # Clean Job Title values (avoid commas to keep CSV shape)
+        chunk.loc[:, 'Job Title'] = chunk['Job Title'].apply(lambda x: re.sub(",", " ", x))
+
+        est_tokens = estimate_tokens(len(chunk))
+        # Convert TPM budget into a sleep between requests
+        pace_seconds = max(BASE_SLEEP_SEC, est_tokens / max(1, TARGET_TPM_BUDGET) * 60.0)
+
+        job_titles_table = "\n".join(
+            [f"{row['Prospect Id']},{row['Job Title']}" for _, row in chunk.iterrows()]
+        )
+
+        try:
+            response, current_chunk_size = call_with_retries(job_titles_table, current_chunk_size)
+            if response:
+                results.append(response)
+        except Exception as e:
+            print(f"Final failure for rows {i}:{end_i} -> {e}")
+
+        # Pacing to stay under TPM with a small jitter
+        sleep_time = pace_seconds + random.uniform(0, 0.75)
+        time.sleep(sleep_time)
+
+        processed = end_i - i
+        i = end_i
+        pbar.update(processed)
+
+print("Adaptive processing complete. Chunks may have been resized to respect limits.")
 
 # Combine and clean the LLM responses
 filtered_results = [result for result in results if result]
@@ -148,6 +234,17 @@ if not skipped_df.empty:
     print("\n========= Skipped Prospects Reasons =========")
     for reason, count in skip_reason_counts.items():
         print(f"{reason}: {count}")
+
+# ===== Optional checkpoint saves to mitigate restarts =====
+checkpoint_ts = datetime.now().strftime("%Y-%m-%d %H %M %S")
+try:
+    tmp_dir = "/Users/Jaime/Documents/Classified Persona Output/_checkpoints"
+    os.makedirs(tmp_dir, exist_ok=True)
+    final_result.to_csv(os.path.join(tmp_dir, f"accepted_checkpoint_{checkpoint_ts}.csv"), index=False)
+    skipped_df.to_csv(os.path.join(tmp_dir, f"skipped_checkpoint_{checkpoint_ts}.csv"), index=False)
+    print(f"Checkpoint written ({checkpoint_ts}).")
+except Exception as _e:
+    print(f"Checkpoint save failed: {_e}")
 
 # Define output paths for accepted and skipped prospects
 save_path = "/Users/Jaime/Documents/Classified Persona Output"  # Adjust for your OS
