@@ -5,15 +5,16 @@
 
 import re
 import io
+import time
+import random
+import math
 import os.path
 from datetime import datetime
 from tqdm import tqdm
 from dotenv import load_dotenv
 import pandas as pd
 from gpt_functions import *
-import time
-import random
-import math
+
 
 load_dotenv()
 
