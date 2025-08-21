@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, pandas as pd
+import os, sys, json, pandas as pd
 
 from config import BATCH_MODEL, FRAME_FILE, PERSONAS_FILE, VALID_PERSONAS
 from io_utils import load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs, save_checkpoint_raw
@@ -94,12 +94,39 @@ def main(input_path: str, resume_batch_id: str | None = None, print_status: bool
     print(f"{len(final_df)} prospects updated")
     print(f"{len(skipped_df)} prospects skipped")
     print(f"\nAccepted: {accepted_path}\nSkipped:  {skipped_path}\nBatch id: {batch_id}")
+    
+def _resolve_input_path(arg_path: str | None) -> str:
+    """
+    If arg_path is provided, use it. Otherwise, prompt the user in the terminal.
+    Cleans quotes, expands ~, and validates existence.
+    """
+    if not arg_path:
+        try:
+            arg_path = input("Input the absolute path of the input file with prospects and no persona: ").strip()
+        except EOFError:
+            print("No input received and --input not provided. Exiting.")
+            sys.exit(1)
+
+    arg_path = arg_path.strip().strip('"').strip("'")
+    arg_path = os.path.expanduser(arg_path)
+
+    if not os.path.isabs(arg_path):
+        arg_path = os.path.abspath(arg_path)
+
+    if not os.path.exists(arg_path):
+        print(f"Input file not found: {arg_path}")
+        sys.exit(1)
+
+    return arg_path
 
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Batch enrichment")
-    ap.add_argument("--input", required=True)
+    # --input optional; prompt if not supplied
+    ap.add_argument("--input", required=False, help="Path to prospects CSV (if omitted, you will be prompted)")
     ap.add_argument("--resume-batch-id", default=None)
     ap.add_argument("--print-status", action="store_true")
     args = ap.parse_args()
-    main(args.input, args.resume_batch_id, args.print_status)
+
+    input_path = _resolve_input_path(args.input)
+    main(input_path, args.resume_batch_id, args.print_status)

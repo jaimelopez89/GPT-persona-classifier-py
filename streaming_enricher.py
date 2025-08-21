@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import time, math, random, pandas as pd
+import time, math, random, os, sys, pandas as pd
 from tqdm import tqdm
 
 from config import (
@@ -116,10 +116,38 @@ def main(input_path: str):
     print(f"{len(final_df)} prospects updated")
     print(f"{len(skipped_df)} prospects skipped")
     print(f"\nAccepted: {accepted_path}\nSkipped:  {skipped_path}")
+    
+def _resolve_input_path(arg_path: str | None) -> str:
+    """
+    If arg_path is provided, use it. Otherwise, prompt the user in the terminal.
+    Cleans quotes, expands ~, and validates existence.
+    """
+    if not arg_path:
+        try:
+            arg_path = input("Input the absolute path of the input file with prospects and no persona: ").strip()
+        except EOFError:
+            print("No input received and --input not provided. Exiting.")
+            sys.exit(1)
+
+    arg_path = arg_path.strip().strip('"').strip("'")
+    arg_path = os.path.expanduser(arg_path)
+
+    if not os.path.isabs(arg_path):
+        # Allow relative paths by making them absolute
+        arg_path = os.path.abspath(arg_path)
+
+    if not os.path.exists(arg_path):
+        print(f"Input file not found: {arg_path}")
+        sys.exit(1)
+
+    return arg_path
 
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Streaming (adaptive) enrichment")
-    ap.add_argument("--input", required=True, help="Absolute path to prospects CSV")
+    # --input is now optional; we’ll prompt if missing
+    ap.add_argument("--input", required=False, help="Path to prospects CSV (if omitted, you will be prompted)")
     args = ap.parse_args()
-    main(args.input)
+
+    input_path = _resolve_input_path(args.input)
+    main(input_path)
