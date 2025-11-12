@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import time, math, random, os, sys, pandas as pd
+import time, math, random, os, sys, traceback, pandas as pd
 from tqdm import tqdm
 
 from config import (
@@ -44,6 +44,7 @@ def main(input_path: str):
     df = filter_emails(df, "Email")
     df = df[df["Job Title"].notna()]
     df = df[["Prospect Id", "Email", "Job Title"]]
+    print(f"Loaded {len(df)} prospects after email filter and non-empty Job Title.")
 
     frame = read_text(FRAME_FILE)
     personas = read_text(PERSONAS_FILE)
@@ -73,10 +74,17 @@ def main(input_path: str):
                 job_titles_table = "\n".join([f"{r['Prospect Id']},{r['Job Title']}" for _, r in chunk.iterrows()])
                 try:
                     resp, current_chunk = call_with_retries(session, job_titles_table, current_chunk)
-                    if resp: all_results.append(resp)
+                    if resp:
+                        all_results.append(resp)
                 except Exception as e:
                     failed_ids.update(chunk["Prospect Id"].tolist())
-                    print(f"Final failure for idx {i}:{end_i} (pass {p}) -> {e}")
+                    # Print a clear message plus full traceback so the root cause is visible
+                    print("\n===== ERROR DURING CHUNK PROCESSING =====")
+                    print(f"Chunk index range: {i}:{end_i} (pass {p})")
+                    print(f"Prospect Ids in failing chunk: {chunk['Prospect Id'].tolist()}")
+                    print(f"Exception: {repr(e)}")
+                    traceback.print_exc()
+                    print("===== END ERROR =====\n")
 
                 time.sleep(pace + random.uniform(0, 0.75))
                 bar.update(end_i - i)

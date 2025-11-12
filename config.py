@@ -8,7 +8,7 @@ BATCH_MODEL = "gpt-4.1-nano"
 # ===== Streaming rate-limit strategy =====
 TARGET_TPM_BUDGET = 360_000
 BASE_SLEEP_SEC = 1.5
-MAX_RETRIES = 6
+MAX_RETRIES = 2
 INITIAL_BACKOFF = 2.0
 MAX_BACKOFF = 30.0
 MIN_CHUNK = 10
