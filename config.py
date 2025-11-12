@@ -2,6 +2,7 @@ from pathlib import Path
 
 # ===== Models =====
 STREAM_MODEL = "gpt-4.1-nano"
+# STREAM_MODEL = "gpt-5-nano"
 BATCH_MODEL = "gpt-4.1-nano"
 
 # ===== Streaming rate-limit strategy =====
