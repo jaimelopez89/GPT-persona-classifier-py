@@ -1,7 +1,18 @@
-import os, json
+"""Utility functions for I/O operations, file handling, and data processing.
+
+This module provides functions for:
+- Loading environment variables and configuration
+- Reading and writing CSV files
+- Filtering and processing prospect data
+- Managing output directories and checkpoint files
+
+Author: Jaime López, 2025
+"""
+
+import os
+import json
 import pandas as pd
 from datetime import datetime
-from pathlib import Path
 from dotenv import load_dotenv
 from config import OUTPUT_DIR, SKIPPED_DIR, CHECKPOINTS_DIR
 
@@ -26,7 +37,8 @@ def read_text(path: str) -> str:
 
 def filter_emails(df: pd.DataFrame, col: str) -> pd.DataFrame:
     s = df[col].fillna("").astype(str)
-    return df[~s.str.contains(r"@ververica|test", regex=True, na=False)]
+    # Removed filter that excluded test emails because it caught too many legitimate emails e.g. statestreet, testa, smartest energy, etc.
+    return df[~s.str.contains(r"@ververica", regex=True, na=False)]
 
 def load_input_csv(path: str) -> pd.DataFrame:
     df = pd.read_csv(path, dtype=str)

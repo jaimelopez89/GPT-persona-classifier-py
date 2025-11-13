@@ -1,3 +1,12 @@
+"""Test script for Google Vertex AI Gemini integration.
+
+This is a simple test script to verify Vertex AI configuration and
+Gemini model access. It demonstrates basic usage of the Vertex AI
+GenerativeModel API.
+
+Author: Jaime López, 2025
+"""
+
 import os
 from dotenv import load_dotenv
 import vertexai

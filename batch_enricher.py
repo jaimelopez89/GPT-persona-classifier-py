@@ -1,5 +1,23 @@
 #!/usr/bin/env python3
-import os, sys, json, pandas as pd
+"""Batch enrichment script using OpenAI Batch API.
+
+This script processes prospect data in batches using the OpenAI Batch API,
+which is more cost-effective for large datasets. It:
+- Loads prospect data from CSV
+- Filters invalid emails and empty job titles
+- Creates batch requests for persona classification
+- Polls for completion and processes results
+- Saves accepted and skipped prospects to separate files
+
+Can be run from command line with optional --input and --resume-batch-id flags.
+
+Author: Jaime López, 2025
+"""
+
+import os
+import sys
+import json
+import pandas as pd
 
 from config import BATCH_MODEL, FRAME_FILE, PERSONAS_FILE, VALID_PERSONAS
 from io_utils import load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs, save_checkpoint_raw
@@ -25,9 +43,9 @@ def build_requests_jsonl(df: pd.DataFrame, system_instructions: str, model: str,
         })
     return ("\n".join(json.dumps(x, ensure_ascii=False) for x in items)).encode("utf-8")
 
-def main(input_path: str, resume_batch_id: str | None = None, print_status: bool = True):
+def main(input_file_path: str, resume_batch_id: str | None = None, print_status: bool = True):
     api_key = load_env_or_fail()
-    df = load_input_csv(input_path)
+    df = load_input_csv(input_file_path)
     df = filter_emails(df, "Email")
     df = df[df["Job Title"].notna()]
     df = df[["Prospect Id", "Email", "Job Title"]]
@@ -68,7 +86,7 @@ def main(input_path: str, resume_batch_id: str | None = None, print_status: bool
             obj = json.loads(content)
             rows.append({"Prospect Id": pid, "Persona": str(obj.get("persona", "")).strip(),
                          "Persona Certainty": str(obj.get("certainty","")).strip()})
-        except Exception as e:
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
             errors_map[pid] = f"Invalid JSON: {e}: {content[:160]}..."
 
     formatted = pd.DataFrame(rows, columns=["Prospect Id", "Persona", "Persona Certainty"])
@@ -94,7 +112,8 @@ def main(input_path: str, resume_batch_id: str | None = None, print_status: bool
     print(f"{len(final_df)} prospects updated")
     print(f"{len(skipped_df)} prospects skipped")
     print(f"\nAccepted: {accepted_path}\nSkipped:  {skipped_path}\nBatch id: {batch_id}")
-    
+
+
 def _resolve_input_path(arg_path: str | None) -> str:
     """
     If arg_path is provided, use it. Otherwise, prompt the user in the terminal.

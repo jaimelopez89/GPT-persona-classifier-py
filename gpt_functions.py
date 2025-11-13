@@ -66,13 +66,13 @@ def ask_chat_session(session, user_message, timeout=120):
         if retry_after_hdr is not None:
             try:
                 retry_after_sec = float(retry_after_hdr)
-            except Exception:
+            except (ValueError, TypeError):
                 retry_after_sec = None
 
         try:
             err_json = response.json()
             err_msg = err_json.get("error", {}).get("message")
-        except Exception:
+        except (ValueError, requests.exceptions.JSONDecodeError):
             err_msg = response.text
 
         # If the server provided a hint, include it in the exception message
@@ -87,8 +87,8 @@ def ask_chat_session(session, user_message, timeout=120):
             raise requests.HTTPError(f"HTTP {response.status_code}: {err_msg}")
 
     except requests.exceptions.Timeout as te:
-        # Surface timeouts to caller for retry
-        raise TimeoutError(f"request timeout: {te}")
+        # Surface timeouts to caller for retry with proper exception chaining
+        raise TimeoutError(f"request timeout: {te}") from te
 
     except requests.exceptions.RequestException as re:
         # Other transport-level issues

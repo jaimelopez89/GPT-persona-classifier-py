@@ -1,8 +1,17 @@
-import requests
+"""Enhanced GPT API client with system and user message support.
+
+This module provides a more flexible interface to the OpenAI Chat API,
+allowing separate system and user messages. This is useful for setting
+context and instructions separately from the actual prompt.
+
+Author: Jaime López, 2025
+"""
+
+import os
 import json
 import io
+import requests
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
 
@@ -50,6 +59,6 @@ def ask_gpt_v2(system_message=None, user_message=None, model="gpt-4o-mini"):
             print(f"Error: Received response code {response.status_code}")
             print(response.text)  # helpful to see any error details from OpenAI
             return None
-    except Exception as e:
+    except (requests.RequestException, KeyError, ValueError) as e:
         print(f"Error while calling OpenAI API: {e}")
         return None

@@ -1,4 +1,17 @@
-# batch_core.py
+"""Core functions for OpenAI Batch API operations.
+
+This module provides functions for:
+- Uploading files for batch processing
+- Creating and managing batch jobs
+- Polling batch status with ETA estimation
+- Downloading batch results
+
+The batch API allows processing large numbers of requests asynchronously,
+which is more cost-effective and rate-limit friendly than streaming.
+
+Author: Jaime López, 2025
+"""
+
 import time
 import json
 import math

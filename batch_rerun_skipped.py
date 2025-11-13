@@ -1,5 +1,22 @@
 #!/usr/bin/env python3
-import json, pandas as pd
+"""Rerun batch processing for previously skipped prospects.
+
+This script takes a CSV file of skipped prospects and attempts to re-process
+them using the OpenAI Batch API. It:
+- Loads skipped prospects from CSV
+- Identifies rows without valid Persona assignments
+- Creates new batch requests for those rows
+- Merges results back with existing data
+- Saves updated accepted and still-skipped prospects
+
+Useful for retrying prospects that failed due to transient errors or
+rate limits in the original batch run.
+
+Author: Jaime López, 2025
+"""
+
+import json
+import pandas as pd
 from config import BATCH_MODEL, FRAME_FILE, PERSONAS_FILE, VALID_PERSONAS, OUTPUT_DIR, SKIPPED_DIR
 from io_utils import load_env_or_fail, read_text, save_checkpoint_raw, now_stamp
 from parsing import sanitize_job_title, parse_batch_output_jsonl
@@ -63,7 +80,7 @@ def main(skipped_path: str, print_status: bool = True):
             obj = json.loads(content)
             rows.append({"Prospect Id": pid, "Persona": str(obj.get("persona","")).strip(),
                          "Persona Certainty": str(obj.get("certainty","")).strip()})
-        except Exception as e:
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
             errors_map[pid] = f"Invalid JSON: {e}: {content[:160]}..."
 
     formatted = pd.DataFrame(rows, columns=["Prospect Id", "Persona", "Persona Certainty"])

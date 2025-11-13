@@ -1,5 +1,26 @@
 #!/usr/bin/env python3
-import time, math, random, os, sys, traceback, pandas as pd
+"""Streaming enrichment script with adaptive chunking and retry logic.
+
+This script processes prospect data using the OpenAI Chat API in streaming mode
+with adaptive chunk sizing. It:
+- Dynamically adjusts chunk size based on rate limits
+- Implements exponential backoff with jitter for retries
+- Processes data in multiple passes for failed prospects
+- Provides progress tracking and error reporting
+- Saves accepted and skipped prospects to separate files
+
+The adaptive chunking helps maximize throughput while respecting rate limits.
+
+Author: Jaime López, 2025
+"""
+
+import time
+import math
+import random
+import os
+import sys
+import traceback
+import requests
 from tqdm import tqdm
 
 from config import (
@@ -21,7 +42,7 @@ def call_with_retries(session, payload_text: str, chunk_size: int):
         try:
             resp = ask_chat_session(session=session, user_message=payload_text)
             return resp, local_chunk
-        except Exception as e:
+        except (TimeoutError, requests.HTTPError, requests.exceptions.RequestException) as e:
             msg = str(e); last_err = e
             server_wait = extract_retry_after_seconds(msg)
             backoff = min(MAX_BACKOFF, (INITIAL_BACKOFF * (2 ** attempt)) + random.uniform(0, 1.0))
@@ -38,9 +59,9 @@ def call_with_retries(session, payload_text: str, chunk_size: int):
             time.sleep(sleep_for)
     raise last_err
 
-def main(input_path: str):
+def main(input_file_path: str):
     load_env_or_fail()
-    df = load_input_csv(input_path)
+    df = load_input_csv(input_file_path)
     df = filter_emails(df, "Email")
     df = df[df["Job Title"].notna()]
     df = df[["Prospect Id", "Email", "Job Title"]]
@@ -76,7 +97,7 @@ def main(input_path: str):
                     resp, current_chunk = call_with_retries(session, job_titles_table, current_chunk)
                     if resp:
                         all_results.append(resp)
-                except Exception as e:
+                except (TimeoutError, requests.HTTPError, requests.exceptions.RequestException, RuntimeError) as e:
                     failed_ids.update(chunk["Prospect Id"].tolist())
                     # Print a clear message plus full traceback so the root cause is visible
                     print("\n===== ERROR DURING CHUNK PROCESSING =====")
@@ -124,7 +145,8 @@ def main(input_path: str):
     print(f"{len(final_df)} prospects updated")
     print(f"{len(skipped_df)} prospects skipped")
     print(f"\nAccepted: {accepted_path}\nSkipped:  {skipped_path}")
-    
+
+
 def _resolve_input_path(arg_path: str | None) -> str:
     """
     If arg_path is provided, use it. Otherwise, prompt the user in the terminal.

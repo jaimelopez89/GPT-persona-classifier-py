@@ -1,3 +1,15 @@
+"""Configuration constants for the persona classification system.
+
+This module defines:
+- Model names for streaming and batch processing
+- Rate limiting and retry parameters
+- Output directory paths
+- Instruction file names
+- Valid persona values
+
+Author: Jaime López, 2025
+"""
+
 from pathlib import Path
 
 # ===== Models =====

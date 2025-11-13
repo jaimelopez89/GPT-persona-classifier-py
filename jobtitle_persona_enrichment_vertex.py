@@ -71,13 +71,13 @@ The output columns must be comma-separated and have no leading or trailing symbo
 
 The five available personas are:
 - Executive Sponsor: Hold the highest strategic roles in a company. Responsible for the creation of products/services that support the company's strategy and vision and meet the customer needs.
-Typically a C-suite individual who has the final approval of the purchase, and has the ability to say No. They care about the overall financial health of the business and the general risk exposure including security and compliance. 
+Typically a C-suite individual who has the final approval of the purchase, and has the ability to say No. They care about the overall financial health of the business and the general risk exposure including security and compliance.
 In charge of the cloud and open source strategy of the company. Their titles often contain Founder, Owner, Chief, President, Vice President or Officer, also abbreviated as two- or three-letter acronyms like CEO, CTO, SVP, CISO, VP, CIO, CITO etc.
 
 - Economic buyer: The Economic Buyer oversees the budget, funding the initiative or project and is responsible for ensuring successful business outcomes. They are responsible for making sound financial decisions that maximize return on investment (ROI) and minimize total cost of ownership (TCO), while also carefully assessing and mitigating potential risks for security and compliance.
 Typical titles include Senior Vice President, Vice President, Senior Director, Director, Head of Platform/Engineering/Site Reliability Engineering/Data/Analytics/Databases/DevOps/Product
 
-- Technical Decision Maker: They determine the decision criteria that a solution will be assessed against. They create technical solution strategies within their team and/or organization and will have broad technical expertise.   Functionality of the tech (compatibility, complexity, and sustainability of the solution) is key in their evaluation for new products and tooling. 
+- Technical Decision Maker: They determine the decision criteria that a solution will be assessed against. They create technical solution strategies within their team and/or organization and will have broad technical expertise.   Functionality of the tech (compatibility, complexity, and sustainability of the solution) is key in their evaluation for new products and tooling.
 Typical titles include Senior Principal, Principal, Senior and one of the following: Architect, Engineer, Solution Architecture, Site Reliability Engineering, DevOps, Product, Software Development
 
 - Technical User: Involved in the research, usage, testing, evaluation, implementation, and/or migration of products/solutions. Typically they are the day to day users. Ease of use and automation to enable more building versus maintaining is important for their role. Common titles include Developer, Site Reliability Engineer, Solution Architect, Software Development Engineer, Software Development Manager, DevOps Engineer, Product Manager.
@@ -97,7 +97,7 @@ chunk_size = 500 # This works well with Vertex!
 #chunk_size = 500 --> 30% skip rate
 #chunk_size = 300 --> 9% skip rate
 #chunk_size = 200 --> 6% skip rate
-# Ideally we should be able to dynamically adjust the chunk_size so that the total number of skipped prospects would be equal to the 
+# Ideally we should be able to dynamically adjust the chunk_size so that the total number of skipped prospects would be equal to the
 # chunk_size, so that they could be taken care of with one additional iteration at the end (with some safety margin)
 # This is not implemented yet, but could be done in the future
 
@@ -119,14 +119,14 @@ for chunk in tqdm(chunks):
     # chunk['Job Title'] = chunk['Job Title'].apply(lambda x: re.sub(",", " ", x))
     chunk.loc[:, 'Job Title'] = chunk['Job Title'].apply(lambda x: re.sub(",", " ", x))
 
-    
+
     # Prepare the data in the required format for the API call
     job_titles_table = "\n".join([f"{row['Prospect Id']},{row['Job Title']}" for index, row in chunk.iterrows()])
-    
+
     # Construct the full prompt with 'definition' and job titles table, then call the API
     prompt = definition + job_titles_table
     response = model.generate_content(prompt).text
-       
+
     # Process response and add to results
     results.append(response)
 
@@ -146,16 +146,16 @@ try:
     # Attempt to read without column restrictions
     df_test = pd.read_csv(io.StringIO(enriched_result), header=None,
                                     on_bad_lines='warn')
-    
+
     # Check if there are more than the expected columns
     if df_test.shape[1] > 4:
         print("Warning: Extra columns detected. Only the first four columns will be used.")
 
     # Proceed with using only the required columns
-    formatted_results = pd.read_csv(io.StringIO(enriched_result), 
-                                    header=None, 
+    formatted_results = pd.read_csv(io.StringIO(enriched_result),
+                                    header=None,
                                     names=["Prospect Id", "Job Title", "Persona", "Persona Certainty"],
-                                    usecols=[0, 1, 2, 3], 
+                                    usecols=[0, 1, 2, 3],
                                     dtype={'Prospect Id': str, 'Job Title': str, 'Persona': str, 'Persona Certainty': str},
                                     on_bad_lines='warn',
                                     )
@@ -167,14 +167,14 @@ except Exception as e:
 
 
 # Test step for visual check
-# print(formatted_results.head()) 
+# print(formatted_results.head())
 # wait = input("Check the head of the formatted results till now. Press Enter to continue.")
 
 # Perform an inner join between formatted_results and df_filtered
 final_result = pd.merge(df_filtered, formatted_results, on="Prospect Id", how="inner")
 
 # For debugging & visual inspection
-# print(final_result.head()) 
+# print(final_result.head())
 # wait = input("Check the head of the merged output till now. Press Enter to continue.")
 
 # Drop duplicate column for Job Title and rename the original to remove the _x
@@ -191,10 +191,10 @@ skipped_result = df_filtered[~df_filtered['Prospect Id'].isin(final_result['Pros
 skipped_result = df_filtered[~df_filtered['Prospect Id'].isin(final_result['Prospect Id'])]
 
 # Print the first few rows to check
-print(final_result.head()) 
-print(skipped_result.head()) 
+print(final_result.head())
+print(skipped_result.head())
 
-print(skipped_result.head()) 
+print(skipped_result.head())
 
 
 # Define path of dir to save to

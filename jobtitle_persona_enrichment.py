@@ -32,7 +32,7 @@ df = pd.read_csv(path, dtype=str)
 # Rename "Record ID" to "Prospect Id" if necessary
 if "Record ID" in df.columns:
     df.rename(columns={"Record ID": "Prospect Id"}, inplace=True)
-    
+
 # Ensure these columns are strings
 cols_to_convert = ["Prospect Id", "Job Title", "First Name", "Last Name", "Email", "Company"]
 cols_in_df = [col for col in cols_to_convert if col in df.columns]
@@ -55,7 +55,7 @@ complete_system_instructions = frame_instructions + persona_definitions
 
 # Prepare the LLM session
 session = create_chat_session(
-    system_message=complete_system_instructions, 
+    system_message=complete_system_instructions,
     # model="gpt-4o-mini"  # or "gpt-3.5-turbo-16k", "gpt-4", etc.
     model="gpt-4.1-nano"  # or "gpt-3.5-turbo-16k", "gpt-4", etc.
 )
@@ -169,10 +169,10 @@ try:
     if df_test.shape[1] > 4:
         print("Warning: Extra columns detected. Only the first four columns will be used.")
     formatted_results = pd.read_csv(
-        io.StringIO(enriched_result), 
-        header=None, 
+        io.StringIO(enriched_result),
+        header=None,
         names=["Prospect Id", "Job Title", "Persona", "Persona Certainty"],
-        usecols=[0, 1, 2, 3], 
+        usecols=[0, 1, 2, 3],
         dtype={'Prospect Id': str, 'Job Title': str, 'Persona': str, 'Persona Certainty': str},
         on_bad_lines='warn',
     )
@@ -182,8 +182,8 @@ except Exception as e:
 
 # Define valid personas
 valid_personas = [
-    'Executive Sponsor', 'Economic Buyer', 'Data Product Manager/Owner', 
-    'Data User', 'Application Developer', 'Real-time Specialist', 
+    'Executive Sponsor', 'Economic Buyer', 'Data Product Manager/Owner',
+    'Data User', 'Application Developer', 'Real-time Specialist',
     'Operator/Systems Administrator', 'Technical Decision Maker', 'Not a target'
 ]
 

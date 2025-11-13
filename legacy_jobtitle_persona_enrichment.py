@@ -51,9 +51,9 @@ The output columns must be comma-separated and have no leading or trailing symbo
 The four available personas are:
 - Executive: Hold the highest strategic roles in a company. Responsible for the creation of products/services that support the company's strategy and vision and meet the customer needs. In charge of the cloud and open source strategy of the company. Their titles often contain Founder, Owner, Chief, President, Vice President or Officer, also abbreviated as two- or three-letter acronyms like CEO, CTO, SVP, CISO, VP, CIO, CITO etc.
 
-- IT Manager: Makes decisions on platform and infrastructure, have budget control and manage a team. They drive cloud migration, IT modernization and transformation efforts. Responsible for automated platform solutions for internal teams. Typical titles include the words Head, Lead, Director, Senior Director and tend to also contain of Cloud, of Infrastructure or of Engineering. 
+- IT Manager: Makes decisions on platform and infrastructure, have budget control and manage a team. They drive cloud migration, IT modernization and transformation efforts. Responsible for automated platform solutions for internal teams. Typical titles include the words Head, Lead, Director, Senior Director and tend to also contain of Cloud, of Infrastructure or of Engineering.
 
-- Architect: Specialist in cloud/ platform technologies, provide the “platform as a service” internally to application teams. They participate in business strategy development  making technology a fundamental investment tool to meet the organizations' objectives. Common titles contain Architect, Cloud Architect, Platform Architect, Data Platform Manager. 
+- Architect: Specialist in cloud/ platform technologies, provide the “platform as a service” internally to application teams. They participate in business strategy development  making technology a fundamental investment tool to meet the organizations' objectives. Common titles contain Architect, Cloud Architect, Platform Architect, Data Platform Manager.
 
 - Developer: Builds features and applications leveraging data infrastructure. Their typical job titles include Engineer, Software Engineer, Engineering Manager, Database, Administrator, SRE, Developer, Senior Engineer, Staff Engineer, Cloud Engineer.
 
@@ -76,14 +76,14 @@ for chunk in tqdm(chunks):
     # chunk['Job Title'] = chunk['Job Title'].apply(lambda x: re.sub(",", " ", x))
     chunk.loc[:, 'Job Title'] = chunk['Job Title'].apply(lambda x: re.sub(",", " ", x))
 
-    
+
     # Prepare the data in the required format for the API call
     job_titles_table = "\n".join([f"{row['Prospect Id']},{row['Job Title']}" for index, row in chunk.iterrows()])
-    
+
     # Construct the full prompt with 'definition' and job titles table, then call the API
     prompt = definition + job_titles_table
     response = ask_chatgpt(prompt)
-       
+
     # Process response and add to results
     results.append(response)
 
@@ -103,16 +103,16 @@ try:
     # Attempt to read without column restrictions
     df_test = pd.read_csv(io.StringIO(enriched_result), header=None,
                                     on_bad_lines='warn')
-    
+
     # Check if there are more than the expected columns
     if df_test.shape[1] > 4:
         print("Warning: Extra columns detected. Only the first four columns will be used.")
 
     # Proceed with using only the required columns
-    formatted_results = pd.read_csv(io.StringIO(enriched_result), 
-                                    header=None, 
+    formatted_results = pd.read_csv(io.StringIO(enriched_result),
+                                    header=None,
                                     names=["Prospect Id", "Job Title", "Persona", "Persona Certainty"],
-                                    usecols=[0, 1, 2, 3], 
+                                    usecols=[0, 1, 2, 3],
                                     dtype={'Prospect Id': str, 'Job Title': str, 'Persona': str, 'Persona Certainty': str},
                                     on_bad_lines='warn',
                                     )
@@ -124,14 +124,14 @@ except Exception as e:
 
 
 # Test step for visual check
-# print(formatted_results.head()) 
+# print(formatted_results.head())
 # wait = input("Check the head of the formatted results till now. Press Enter to continue.")
 
 # Perform an inner join between formatted_results and df_filtered
 final_result = pd.merge(df_filtered, formatted_results, on="Prospect Id", how="inner")
 
 # For debugging & visual inspection
-# print(final_result.head()) 
+# print(final_result.head())
 # wait = input("Check the head of the merged output till now. Press Enter to continue.")
 
 # Drop duplicate column for Job Title and rename the original to remove the _x
@@ -142,7 +142,7 @@ final_result.rename(columns={'Job Title_x': 'Job Title'}, inplace=True)
 final_result = final_result[final_result['Persona'].isin(valid_personas)]
 
 # Print the first few rows to check
-print(final_result.head()) 
+print(final_result.head())
 
 # Define path of dir to save to
 save_path = "C:/Users/Jaime/Documents/Marketing analytics/Classified persona output"

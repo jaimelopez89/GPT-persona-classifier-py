@@ -1,0 +1,26 @@
+# Core dependencies
+requests>=2.32.4
+python-dotenv>=1.0.1
+pandas>=2.2.2
+tqdm>=4.66.5
+
+# OpenAI API
+openai>=1.63.2
+
+# Google Generative AI (for Gemini) - using new recommended library
+google-genai>=0.2.0
+
+# Google Vertex AI (for Vertex AI integration)
+google-cloud-aiplatform>=1.38.0
+
+# LangChain (update to address dependabot alerts)
+langchain-core>=0.2.43
+langchain>=0.3.18
+langchain-community>=0.2.5
+langchain-google-vertexai>=1.0.5
+langchain-openai>=0.3.5
+langchain-text-splitters>=0.3.6
+
+# Additional utilities
+requests-toolbelt>=1.0.0
+

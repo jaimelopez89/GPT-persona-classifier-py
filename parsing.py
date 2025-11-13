@@ -1,4 +1,18 @@
-import io, re, json, pandas as pd
+"""Parsing utilities for LLM responses and batch outputs.
+
+This module provides functions for:
+- Parsing CSV-like output from streaming LLM responses
+- Parsing JSONL output from batch API responses
+- Sanitizing job titles
+- Determining skip reasons for invalid responses
+
+Author: Jaime López, 2025
+"""
+
+import io
+import re
+import json
+import pandas as pd
 from config import VALID_PERSONAS
 
 def sanitize_job_title(title: str) -> str:
@@ -40,14 +54,14 @@ def parse_batch_output_jsonl(jsonl_str: str):
             try:
                 content = resp["body"]["choices"][0]["message"]["content"]
                 out[cid] = content
-            except Exception as e:
+            except (KeyError, TypeError, IndexError) as e:
                 errors[cid] = f"Malformed success body: {e}"
         else:
             body = resp.get("body") or {}
             msg = None
             try:
                 msg = body.get("error", {}).get("message")
-            except Exception:
+            except (AttributeError, TypeError):
                 msg = None
             errors[cid] = f"HTTP {status}: {msg or body}"
     return out, errors

@@ -4,8 +4,6 @@
 
 import os
 import requests
-# import json
-# import io
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,7 +17,7 @@ def ask_chatgpt(prompt):
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-  
+
     data = {
         "model": "gpt-3.5-turbo",
         # "model": "gpt-4o",
@@ -28,13 +26,13 @@ def ask_chatgpt(prompt):
 
         "messages": [{"role": "user", "content": prompt}]
     }
-      
+
     response = requests.post(
         url="https://api.openai.com/v1/chat/completions",
         headers=headers,
         json=data, timeout=120
     )
-   
+
     if response.status_code == 200:
         return response.json()['choices'][0]['message']['content'].strip()
     else:
