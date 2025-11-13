@@ -28,7 +28,7 @@ from config import (
     MAX_BACKOFF, MIN_CHUNK, MAX_CHUNK, SAFETY_TOKEN_PER_ROW, MAX_PASSES, VALID_PERSONAS,
     FRAME_FILE, PERSONAS_FILE
 )
-from io_utils import load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs
+from io_utils import load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs, resolve_input_file
 from parsing import sanitize_job_title, parse_llm_csv, determine_skip_reason
 from llm_client import create_chat_session, ask_chat_session, extract_retry_after_seconds
 
@@ -201,9 +201,17 @@ def main(input_file_path: str):
 
 
 def _resolve_input_path(arg_path: str | None) -> str:
-    """
+    """Resolve input file path from argument or user prompt, handling Hubspot zips.
+
     If arg_path is provided, use it. Otherwise, prompt the user in the terminal.
+    Automatically handles Hubspot zip files by extracting and locating the CSV.
     Cleans quotes, expands ~, and validates existence.
+
+    Args:
+        arg_path: Optional file path from command line argument.
+
+    Returns:
+        Path to the CSV file to process (extracted from zip if needed).
     """
     if not arg_path:
         try:
@@ -219,11 +227,12 @@ def _resolve_input_path(arg_path: str | None) -> str:
         # Allow relative paths by making them absolute
         arg_path = os.path.abspath(arg_path)
 
-    if not os.path.exists(arg_path):
-        print(f"Input file not found: {arg_path}")
+    # Use resolve_input_file to handle both CSV and Hubspot zip files
+    try:
+        return resolve_input_file(arg_path)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}")
         sys.exit(1)
-
-    return arg_path
 
 if __name__ == "__main__":
     import argparse
