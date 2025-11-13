@@ -10,6 +10,7 @@ Author: Jaime López, 2025
 """
 
 import os
+import csv
 import json
 import pandas as pd
 from datetime import datetime

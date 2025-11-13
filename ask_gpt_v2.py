@@ -8,8 +8,6 @@ Author: Jaime López, 2025
 """
 
 import os
-import json
-import io
 import requests
 from dotenv import load_dotenv
 
@@ -63,7 +61,8 @@ def ask_gpt_v2(system_message: str | None = None, user_message: str | None = Non
         response = requests.post(
             url="https://api.openai.com/v1/chat/completions",
             headers=headers,
-            json=data
+            json=data,
+            timeout=120
         )
         if response.status_code == 200:
             return response.json()['choices'][0]['message']['content'].strip()

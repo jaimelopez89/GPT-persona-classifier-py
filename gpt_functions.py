@@ -117,8 +117,6 @@ def ask_chat_session(session: dict, user_message: str, timeout: int = 120) -> st
     except requests.exceptions.Timeout as te:
         # Surface timeouts to caller for retry with proper exception chaining
         raise TimeoutError(f"request timeout: {te}") from te
-        # Surface timeouts to caller for retry with proper exception chaining
-        raise TimeoutError(f"request timeout: {te}") from te
 
     except requests.exceptions.RequestException as re:
         # Other transport-level issues

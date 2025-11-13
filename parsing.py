@@ -114,7 +114,6 @@ def parse_batch_output_jsonl(jsonl_str: str) -> tuple[dict[str, str], dict[str, 
             try:
                 msg = body.get("error", {}).get("message")
             except (AttributeError, TypeError):
-            except (AttributeError, TypeError):
                 msg = None
             errors[cid] = f"HTTP {status}: {msg or body}"
     return out, errors

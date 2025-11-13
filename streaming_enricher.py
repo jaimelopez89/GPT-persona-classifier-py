@@ -72,7 +72,8 @@ def call_with_retries(session: dict, payload_text: str, chunk_size: int) -> tupl
             resp = ask_chat_session(session=session, user_message=payload_text)
             return resp, local_chunk
         except (TimeoutError, requests.HTTPError, requests.exceptions.RequestException) as e:
-            msg = str(e); last_err = e
+            msg = str(e)
+            last_err = e
             server_wait = extract_retry_after_seconds(msg)
             # Exponential backoff with jitter
             backoff = min(MAX_BACKOFF, (INITIAL_BACKOFF * (2 ** attempt)) + random.uniform(0, 1.0))
