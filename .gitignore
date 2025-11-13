@@ -2,4 +2,4 @@ requirements
 .env
 frame_instructions.txt
 persona_definitions.txt
-__pycache__/io_utils.cpython-312.pyc
+__pycache__/*
