@@ -15,17 +15,29 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def ask_gpt_v2(system_message=None, user_message=None, model="gpt-4o-mini"):
-    """
-    Calls the OpenAI Chat Completion API, allowing separate system and user messages
-    as well as a customizable model.
 
-    :param system_message: (str) Content for the system role, which sets high-level instructions or context.
-    :param user_message:   (str) The actual user prompt or data payload you want GPT to act upon.
-    :param model:          (str) The name of the OpenAI model (e.g., "gpt-3.5-turbo-16k", "gpt-4").
-    :return:               (str) The response from GPT, or None if there's an error.
+def ask_gpt_v2(system_message: str | None = None, user_message: str | None = None, model: str = "gpt-4o-mini") -> str | None:
+    """Call OpenAI Chat API with separate system and user messages.
+
+    Calls the OpenAI Chat Completion API, allowing separate system and user messages
+    as well as a customizable model. The system message sets high-level context,
+    while the user message contains the actual prompt.
+
+    Args:
+        system_message: Content for the system role, which sets high-level
+            instructions or context. Optional.
+        user_message: The actual user prompt or data payload. Optional.
+        model: The name of the OpenAI model (e.g., "gpt-3.5-turbo-16k", "gpt-4",
+            "gpt-4o-mini"). Default: "gpt-4o-mini".
+
+    Returns:
+        The response from GPT as a string, or None if there's an error.
+
+    Note:
+        At least one of system_message or user_message should be provided.
+        Uses OPENAI_API_KEY environment variable for authentication.
     """
-    api_key = os.getenv("OPENAI_API_KEY")  # Make sure this is set in your environment
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         print("Error: OPENAI_API_KEY environment variable not found.")
         return None
@@ -57,7 +69,7 @@ def ask_gpt_v2(system_message=None, user_message=None, model="gpt-4o-mini"):
             return response.json()['choices'][0]['message']['content'].strip()
         else:
             print(f"Error: Received response code {response.status_code}")
-            print(response.text)  # helpful to see any error details from OpenAI
+            print(response.text)  # Helpful to see any error details from OpenAI
             return None
     except (requests.RequestException, KeyError, ValueError) as e:
         print(f"Error while calling OpenAI API: {e}")
