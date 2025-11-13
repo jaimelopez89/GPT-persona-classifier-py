@@ -1,12 +1,40 @@
 #!/usr/bin/env python3
-import os, sys, json, pandas as pd
+"""Batch enrichment script using OpenAI Batch API.
+
+This script processes prospect data using OpenAI's Batch API for asynchronous
+processing. It can create new batch jobs or resume existing ones, then processes
+the results and saves accepted/skipped prospects.
+
+Author: Jaime López, 2025
+"""
+
+import os
+import sys
+import json
+import pandas as pd
 
 from config import BATCH_MODEL, FRAME_FILE, PERSONAS_FILE, VALID_PERSONAS
 from io_utils import load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs, save_checkpoint_raw
 from parsing import sanitize_job_title, parse_batch_output_jsonl
 from batch_core import upload_file_for_batch, create_batch, poll_batch_until_done, download_file_content
 
+
 def build_requests_jsonl(df: pd.DataFrame, system_instructions: str, model: str, temperature: float = 0.0) -> bytes:
+    """Build a JSONL file for OpenAI Batch API from prospect data.
+
+    Creates a JSONL file where each line is a batch API request for one prospect.
+    Each request asks the LLM to classify a job title into a persona.
+
+    Args:
+        df: DataFrame containing prospects with "Prospect Id" and "Job Title" columns.
+        system_instructions: System message with persona definitions and instructions.
+        model: OpenAI model name to use.
+        temperature: Sampling temperature (default: 0.0 for deterministic output).
+
+    Returns:
+        JSONL file content as bytes (UTF-8 encoded).
+    """
+    # Add output format instructions to system message
     sys_msg = (
         system_instructions.strip()
         + "\n\nCRITICAL OUTPUT FORMAT: Respond with a SINGLE JSON object only.\n"
@@ -16,32 +44,58 @@ def build_requests_jsonl(df: pd.DataFrame, system_instructions: str, model: str,
     items = []
     for _, r in df.iterrows():
         pid = str(r["Prospect Id"])
+        # Format user message with prospect ID and sanitized job title
         user = f"Prospect Id: {pid}\nJob Title: {sanitize_job_title(r['Job Title'])}\n\nReturn ONLY the JSON."
         items.append({
-            "custom_id": pid,
+            "custom_id": pid,  # Use prospect ID as custom_id for tracking
             "method": "POST",
             "url": "/v1/chat/completions",
             "body": {"model": model, "messages": [{"role":"system","content":sys_msg},{"role":"user","content":user}], "temperature": temperature}
         })
+    # Convert to JSONL format (one JSON object per line)
     return ("\n".join(json.dumps(x, ensure_ascii=False) for x in items)).encode("utf-8")
 
-def main(input_path: str, resume_batch_id: str | None = None, print_status: bool = True):
+
+def main(input_path: str, resume_batch_id: str | None = None, print_status: bool = True) -> None:
+    """Main function for batch enrichment processing.
+
+    Loads prospect data, creates or resumes a batch job, waits for completion,
+    processes results, and saves accepted/skipped prospects.
+
+    Args:
+        input_path: Path to CSV file containing prospect data.
+        resume_batch_id: Optional batch ID to resume (if None, creates new batch).
+        print_status: If True, print detailed batch status during polling.
+    """
     api_key = load_env_or_fail()
+    # Load and filter prospect data
     df = load_input_csv(input_path)
+    print(f"Loaded {len(df)} prospects from CSV.")
+    
     df = filter_emails(df, "Email")
-    df = df[df["Job Title"].notna()]
+    print(f"After email filter: {len(df)} prospects.")
+    
+    # Filter out rows with empty job titles (check for both pandas NaN and empty strings)
+    df = df[df["Job Title"].notna() & (df["Job Title"].astype(str).str.strip() != "")]
+    print(f"After non-empty Job Title filter: {len(df)} prospects.")
+    
     df = df[["Prospect Id", "Email", "Job Title"]]
     if df.empty:
-        print("No valid rows to process."); return
+        print("No valid rows to process.")
+        return
 
-    frame = read_text(FRAME_FILE); personas = read_text(PERSONAS_FILE)
+    # Load system instructions
+    frame = read_text(FRAME_FILE)
+    personas = read_text(PERSONAS_FILE)
     system = frame + personas
 
+    # Create new batch or resume existing one
     if resume_batch_id:
         batch_id = resume_batch_id
         print(f"Resuming batch {batch_id}")
         meta = poll_batch_until_done(api_key, batch_id, echo=print_status)
     else:
+        # Build and upload requests file
         req = build_requests_jsonl(df, system_instructions=system, model=BATCH_MODEL)
         input_file_id = upload_file_for_batch(api_key, req)
         print(f"Uploaded requests file id: {input_file_id}")
@@ -49,10 +103,12 @@ def main(input_path: str, resume_batch_id: str | None = None, print_status: bool
         print(f"Created batch id: {batch_id}")
         meta = poll_batch_until_done(api_key, batch_id, echo=print_status)
 
+    # Validate batch completed successfully
     if meta.get("status") != "completed":
         save_checkpoint_raw(f"batch_{batch_id}_meta", meta)
         raise RuntimeError(f"Batch not completed: {meta.get('status')}")
 
+    # Download and save batch results
     out_file = meta.get("output_file_id") or (meta.get("output_file_ids") or [None])[0]
     if not out_file:
         raise RuntimeError("No output file id in batch response.")
@@ -60,35 +116,45 @@ def main(input_path: str, resume_batch_id: str | None = None, print_status: bool
     jsonl_output = download_file_content(api_key, out_file)
     save_checkpoint_raw(f"batch_{batch_id}_output", jsonl_output)
 
+    # Parse batch output
     result_map, errors_map = parse_batch_output_jsonl(jsonl_output)
 
+    # Extract persona classifications from JSON responses
     rows = []
     for pid, content in result_map.items():
         try:
             obj = json.loads(content)
-            rows.append({"Prospect Id": pid, "Persona": str(obj.get("persona", "")).strip(),
-                         "Persona Certainty": str(obj.get("certainty","")).strip()})
-        except Exception as e:
+            rows.append({
+                "Prospect Id": pid,
+                "Persona": str(obj.get("persona", "")).strip(),
+                "Persona Certainty": str(obj.get("certainty", "")).strip()
+            })
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
             errors_map[pid] = f"Invalid JSON: {e}: {content[:160]}..."
 
+    # Merge results with original data
     formatted = pd.DataFrame(rows, columns=["Prospect Id", "Persona", "Persona Certainty"])
     merged = df.merge(formatted, on="Prospect Id", how="left")
 
-    def skip_reason(row):
-        pid = str(row.get("Prospect Id",""))
-        persona = str(row.get("Persona","") or "").strip()
+    def skip_reason(row: pd.Series) -> str | None:
+        """Determine skip reason for a prospect row."""
+        pid = str(row.get("Prospect Id", ""))
+        persona = str(row.get("Persona", "") or "").strip()
         if not persona:
-            return f"Batch error: {errors_map.get(pid,'No LLM response')}"
+            return f"Batch error: {errors_map.get(pid, 'No LLM response')}"
         if persona not in VALID_PERSONAS:
             return f"Invalid persona: {persona}"
         return None
 
+    # Separate accepted and skipped prospects
     merged["Skip Reason"] = merged.apply(skip_reason, axis=1)
     final_df = merged[merged["Skip Reason"].isna()].copy()
     skipped_df = merged[merged["Skip Reason"].notna()].copy()
+    # Clean up duplicates and validate personas
     final_df = final_df.drop_duplicates(subset=["Prospect Id"], keep="first")
     final_df = final_df[final_df["Persona"].isin(VALID_PERSONAS)]
 
+    # Save results
     accepted_path, skipped_path = save_outputs(final_df, skipped_df)
     print("\n========= Processing Results =========")
     print(f"{len(final_df)} prospects updated")
@@ -96,9 +162,19 @@ def main(input_path: str, resume_batch_id: str | None = None, print_status: bool
     print(f"\nAccepted: {accepted_path}\nSkipped:  {skipped_path}\nBatch id: {batch_id}")
     
 def _resolve_input_path(arg_path: str | None) -> str:
-    """
+    """Resolve input file path from argument or user prompt.
+
     If arg_path is provided, use it. Otherwise, prompt the user in the terminal.
     Cleans quotes, expands ~, and validates existence.
+
+    Args:
+        arg_path: Optional file path from command line argument.
+
+    Returns:
+        Absolute path to the input file.
+
+    Raises:
+        SystemExit: If no input provided and EOFError occurs, or file doesn't exist.
     """
     if not arg_path:
         try:
