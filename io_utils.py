@@ -10,7 +10,12 @@ Author: Jaime López, 2025
 """
 
 import os
+import csv
 import json
+import zipfile
+import tempfile
+import shutil
+from pathlib import Path
 import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
@@ -85,6 +90,137 @@ def filter_emails(df: pd.DataFrame, col: str) -> pd.DataFrame:
     s = df[col].fillna("").astype(str)
     # Removed filter that excluded test emails because it caught too many legitimate emails e.g. statestreet, testa, smartest energy, etc.
     return df[~s.str.contains(r"@ververica", regex=True, na=False)]
+
+def extract_hubspot_zip(zip_path: str) -> str:
+    """Extract Hubspot zip file and return path to the contacts CSV.
+
+    Hubspot exports come as zip files containing:
+    - hubspot-export-summary (can be ignored)
+    - contacts-with-job-title-but-no.csv (the file we need)
+
+    Args:
+        zip_path: Path to the Hubspot zip file.
+
+    Returns:
+        Path to the extracted contacts CSV file.
+
+    Raises:
+        ValueError: If zip file doesn't contain the expected CSV file.
+        zipfile.BadZipFile: If the file is not a valid zip file.
+    """
+    # Create a temporary directory for extraction
+    temp_dir = tempfile.mkdtemp(prefix="hubspot_extract_")
+    
+    try:
+        # Extract the zip file
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        # Look for the contacts CSV file
+        # Hubspot typically names it "contacts-with-job-title-but-no.csv"
+        # but we'll search for any CSV that matches the pattern
+        csv_patterns = [
+            "contacts-with-job-title-but-no.csv",
+            "contacts-with-job-title-but-no",
+            "*contacts*.csv"
+        ]
+        
+        found_csv = None
+        for pattern in csv_patterns:
+            # Try exact match first
+            exact_path = os.path.join(temp_dir, pattern)
+            if os.path.exists(exact_path) and exact_path.endswith('.csv'):
+                found_csv = exact_path
+                break
+            
+            # Try pattern matching
+            import glob
+            matches = glob.glob(os.path.join(temp_dir, pattern))
+            csv_matches = [m for m in matches if m.endswith('.csv') and 'summary' not in m.lower()]
+            if csv_matches:
+                found_csv = csv_matches[0]
+                break
+        
+        # If not found with patterns, search all CSV files and exclude summary
+        if not found_csv:
+            all_csvs = list(Path(temp_dir).glob("*.csv"))
+            csvs = [str(csv) for csv in all_csvs if 'summary' not in csv.name.lower()]
+            if len(csvs) == 1:
+                found_csv = csvs[0]
+            elif len(csvs) > 1:
+                # Multiple CSVs found, prefer the one with "contacts" in the name
+                contacts_csvs = [c for c in csvs if 'contact' in c.lower()]
+                if contacts_csvs:
+                    found_csv = contacts_csvs[0]
+                else:
+                    raise ValueError(
+                        f"Multiple CSV files found in zip, cannot determine which to use: {csvs}"
+                    )
+        
+        if not found_csv:
+            raise ValueError(
+                "Could not find contacts CSV file in Hubspot zip. "
+                "Expected file matching 'contacts-with-job-title-but-no.csv' pattern."
+            )
+        
+        # Move the CSV to a more permanent location (same directory as zip)
+        zip_dir = os.path.dirname(os.path.abspath(zip_path))
+        zip_basename = os.path.splitext(os.path.basename(zip_path))[0]
+        extracted_csv_path = os.path.join(zip_dir, f"{zip_basename}_extracted.csv")
+        
+        # Copy the CSV to the final location
+        shutil.copy2(found_csv, extracted_csv_path)
+        
+        # Clean up temporary directory
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        return extracted_csv_path
+        
+    except Exception:
+        # Clean up on error
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+
+
+def resolve_input_file(input_path: str) -> str:
+    """Resolve input file path, handling both CSV files and Hubspot zip files.
+
+    If the input is a zip file, it will be extracted and the contacts CSV
+    will be located and returned. If it's already a CSV, it's returned as-is.
+
+    Args:
+        input_path: Path to input file (CSV or zip).
+
+    Returns:
+        Path to the CSV file to process.
+
+    Raises:
+        ValueError: If file format is not supported or expected files are missing.
+        FileNotFoundError: If the input file doesn't exist.
+    """
+    input_path = os.path.abspath(os.path.expanduser(input_path))
+    
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"Input file not found: {input_path}")
+    
+    # Check if it's a zip file
+    if zipfile.is_zipfile(input_path):
+        print(f"Detected Hubspot zip file: {input_path}")
+        print("Extracting and locating contacts CSV...")
+        csv_path = extract_hubspot_zip(input_path)
+        print(f"Using extracted CSV: {csv_path}")
+        return csv_path
+    
+    # Check if it's a CSV file
+    if input_path.lower().endswith('.csv'):
+        return input_path
+    
+    # Unknown file type
+    raise ValueError(
+        f"Unsupported file type. Expected CSV file or Hubspot zip file, "
+        f"got: {os.path.basename(input_path)}"
+    )
+
 
 def load_input_csv(path: str) -> pd.DataFrame:
     """Load a CSV file and normalize column names and types.

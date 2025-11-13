@@ -20,7 +20,7 @@ import json
 import pandas as pd
 
 from config import BATCH_MODEL, FRAME_FILE, PERSONAS_FILE, VALID_PERSONAS
-from io_utils import load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs, save_checkpoint_raw
+from io_utils import load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs, save_checkpoint_raw, resolve_input_file
 from parsing import sanitize_job_title, parse_batch_output_jsonl
 from batch_core import upload_file_for_batch, create_batch, poll_batch_until_done, download_file_content
 
@@ -152,16 +152,17 @@ def main(input_file_path: str, resume_batch_id: str | None = None, print_status:
 
 
 def _resolve_input_path(arg_path: str | None) -> str:
-    """Resolve input file path from argument or user prompt.
+    """Resolve input file path from argument or user prompt, handling Hubspot zips.
 
     If arg_path is provided, use it. Otherwise, prompt the user in the terminal.
+    Automatically handles Hubspot zip files by extracting and locating the CSV.
     Cleans quotes, expands ~, and validates existence.
 
     Args:
         arg_path: Optional file path from command line argument.
 
     Returns:
-        Absolute path to the input file.
+        Path to the CSV file to process (extracted from zip if needed).
 
     Raises:
         SystemExit: If no input provided and EOFError occurs, or file doesn't exist.
@@ -179,11 +180,12 @@ def _resolve_input_path(arg_path: str | None) -> str:
     if not os.path.isabs(arg_path):
         arg_path = os.path.abspath(arg_path)
 
-    if not os.path.exists(arg_path):
-        print(f"Input file not found: {arg_path}")
+    # Use resolve_input_file to handle both CSV and Hubspot zip files
+    try:
+        return resolve_input_file(arg_path)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}")
         sys.exit(1)
-
-    return arg_path
 
 if __name__ == "__main__":
     import argparse

@@ -21,7 +21,7 @@ BATCH_MODEL = "gpt-4.1-nano"
 
 # ===== Streaming rate-limit strategy =====
 # Target tokens per minute budget to avoid rate limits
-TARGET_TPM_BUDGET = 360_000
+TARGET_TPM_BUDGET = 360000
 # Base sleep time in seconds between API calls
 BASE_SLEEP_SEC = 1.5
 # Maximum number of retry attempts for failed API calls
