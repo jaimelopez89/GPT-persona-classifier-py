@@ -1,4 +1,4 @@
-# GPT Persona Classifier (Python)
+# GPT-persona-classifier-py
 
 This repository contains a Python toolkit for automatically classifying prospects into personas based on their **job titles** (and other fields you choose). It’s designed to work both as a **local script** (for ad-hoc runs) and as part of an **automated nightly pipeline** (e.g. exporting from HubSpot, enriching with OpenAI, and importing results back).
 
