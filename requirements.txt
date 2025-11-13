@@ -24,3 +24,6 @@ langchain-text-splitters>=0.3.6
 # Additional utilities
 requests-toolbelt>=1.0.0
 
+# Hubspot API integration
+hubspot-api-client>=9.0.0
+

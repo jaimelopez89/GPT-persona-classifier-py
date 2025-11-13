@@ -19,7 +19,7 @@ from pathlib import Path
 import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
-from config import OUTPUT_DIR, SKIPPED_DIR, CHECKPOINTS_DIR
+from config import OUTPUT_DIR, SKIPPED_DIR, CHECKPOINTS_DIR, HUBSPOT_REPORT_ID
 
 
 def load_env_or_fail() -> str:
@@ -110,12 +110,12 @@ def extract_hubspot_zip(zip_path: str) -> str:
     """
     # Create a temporary directory for extraction
     temp_dir = tempfile.mkdtemp(prefix="hubspot_extract_")
-    
+
     try:
         # Extract the zip file
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(temp_dir)
-        
+
         # Look for the contacts CSV file
         # Hubspot typically names it "contacts-with-job-title-but-no.csv"
         # but we'll search for any CSV that matches the pattern
@@ -124,7 +124,7 @@ def extract_hubspot_zip(zip_path: str) -> str:
             "contacts-with-job-title-but-no",
             "*contacts*.csv"
         ]
-        
+
         found_csv = None
         for pattern in csv_patterns:
             # Try exact match first
@@ -132,7 +132,7 @@ def extract_hubspot_zip(zip_path: str) -> str:
             if os.path.exists(exact_path) and exact_path.endswith('.csv'):
                 found_csv = exact_path
                 break
-            
+
             # Try pattern matching
             import glob
             matches = glob.glob(os.path.join(temp_dir, pattern))
@@ -140,7 +140,7 @@ def extract_hubspot_zip(zip_path: str) -> str:
             if csv_matches:
                 found_csv = csv_matches[0]
                 break
-        
+
         # If not found with patterns, search all CSV files and exclude summary
         if not found_csv:
             all_csvs = list(Path(temp_dir).glob("*.csv"))
@@ -156,53 +156,89 @@ def extract_hubspot_zip(zip_path: str) -> str:
                     raise ValueError(
                         f"Multiple CSV files found in zip, cannot determine which to use: {csvs}"
                     )
-        
+
         if not found_csv:
             raise ValueError(
                 "Could not find contacts CSV file in Hubspot zip. "
                 "Expected file matching 'contacts-with-job-title-but-no.csv' pattern."
             )
-        
+
         # Move the CSV to a more permanent location (same directory as zip)
         zip_dir = os.path.dirname(os.path.abspath(zip_path))
         zip_basename = os.path.splitext(os.path.basename(zip_path))[0]
         extracted_csv_path = os.path.join(zip_dir, f"{zip_basename}_extracted.csv")
-        
+
         # Copy the CSV to the final location
         shutil.copy2(found_csv, extracted_csv_path)
-        
+
         # Clean up temporary directory
         shutil.rmtree(temp_dir, ignore_errors=True)
-        
+
         return extracted_csv_path
-        
+
     except Exception:
         # Clean up on error
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise
 
 
-def resolve_input_file(input_path: str) -> str:
-    """Resolve input file path, handling both CSV files and Hubspot zip files.
+def pull_hubspot_data(report_id: str | None = None) -> pd.DataFrame:
+    """Pull contact data from Hubspot report.
 
+    Args:
+        report_id: Optional Hubspot report ID. If None, uses HUBSPOT_REPORT_ID from config.
+
+    Returns:
+        DataFrame with contact data ready for processing.
+    """
+    try:
+        from hubspot_client import pull_report_contacts
+        report_id = report_id or HUBSPOT_REPORT_ID
+        return pull_report_contacts(report_id=report_id)
+    except ImportError as exc:
+        raise RuntimeError(
+            "Hubspot integration not available. Install hubspot-api-client package."
+        ) from exc
+
+
+def resolve_input_file(input_path: str | None = None) -> str:
+    """Resolve input file path, handling CSV files, Hubspot zip files, or Hubspot API.
+
+    If input_path is None and HUBSPOT_REPORT_ID is set, pulls data from Hubspot.
     If the input is a zip file, it will be extracted and the contacts CSV
     will be located and returned. If it's already a CSV, it's returned as-is.
 
     Args:
-        input_path: Path to input file (CSV or zip).
+        input_path: Optional path to input file (CSV or zip). If None and
+            HUBSPOT_REPORT_ID is set, pulls from Hubspot API.
 
     Returns:
-        Path to the CSV file to process.
+        Path to the CSV file to process, or raises if pulling from Hubspot.
 
     Raises:
         ValueError: If file format is not supported or expected files are missing.
         FileNotFoundError: If the input file doesn't exist.
+        RuntimeError: If Hubspot pull is requested but not available.
     """
+    # Check if we should pull from Hubspot
+    if input_path is None and HUBSPOT_REPORT_ID:
+        print(f"Pulling data from Hubspot report {HUBSPOT_REPORT_ID}...")
+        df = pull_hubspot_data()
+        # Save to temporary CSV for processing
+        temp_csv = os.path.join(str(OUTPUT_DIR), f"hubspot_pull_{now_stamp('%Y%m%d_%H%M%S')}.csv")
+        ensure_dirs()
+        df.to_csv(temp_csv, index=False)
+        print(f"Saved Hubspot data to: {temp_csv}")
+        return temp_csv
+
+    if input_path is None:
+        raise ValueError("No input path provided and HUBSPOT_REPORT_ID not set")
+
     input_path = os.path.abspath(os.path.expanduser(input_path))
-    
+
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"Input file not found: {input_path}")
-    
+
     # Check if it's a zip file
     if zipfile.is_zipfile(input_path):
         print(f"Detected Hubspot zip file: {input_path}")
@@ -210,11 +246,11 @@ def resolve_input_file(input_path: str) -> str:
         csv_path = extract_hubspot_zip(input_path)
         print(f"Using extracted CSV: {csv_path}")
         return csv_path
-    
+
     # Check if it's a CSV file
     if input_path.lower().endswith('.csv'):
         return input_path
-    
+
     # Unknown file type
     raise ValueError(
         f"Unsupported file type. Expected CSV file or Hubspot zip file, "
@@ -240,31 +276,33 @@ def load_input_csv(path: str) -> pd.DataFrame:
     # Read CSV with Prospect Id as string to prevent scientific notation
     # Use dtype=str for all columns to preserve exact values
     df = pd.read_csv(path, dtype=str, keep_default_na=False)
-    
+
     # Normalize column name if present
     if "Record ID" in df.columns and "Prospect Id" not in df.columns:
         df = df.rename(columns={"Record ID": "Prospect Id"})
-    
+
     # Ensure key columns are strings and normalize empty values
     for c in ["Prospect Id", "Job Title", "First Name", "Last Name", "Email", "Company"]:
         if c in df.columns:
             df[c] = df[c].astype(str)
             # Replace 'nan' strings (from dtype=str conversion) with empty strings
             df[c] = df[c].replace("nan", "").replace("NaN", "").replace("None", "")
-    
+
     return df
 
 
-def save_outputs(final_df: pd.DataFrame, skipped_df: pd.DataFrame) -> tuple[str, str]:
+def save_outputs(final_df: pd.DataFrame, skipped_df: pd.DataFrame, import_to_hubspot: bool = False) -> tuple[str, str]:
     """Save accepted and skipped prospect DataFrames to CSV files.
 
     Creates timestamped filenames and saves to OUTPUT_DIR and SKIPPED_DIR.
-    Ensures output directories exist before saving. Prospect IDs are saved
-    with quoting to prevent Excel from converting them to scientific notation.
+    Optionally imports accepted prospects to Hubspot. Ensures output directories
+    exist before saving. Prospect IDs are saved with quoting to prevent Excel
+    from converting them to scientific notation.
 
     Args:
         final_df: DataFrame containing accepted prospects with valid personas.
         skipped_df: DataFrame containing skipped prospects with skip reasons.
+        import_to_hubspot: If True, import accepted prospects to Hubspot after saving.
 
     Returns:
         Tuple of (accepted_file_path, skipped_file_path) as strings.
@@ -277,7 +315,7 @@ def save_outputs(final_df: pd.DataFrame, skipped_df: pd.DataFrame) -> tuple[str,
     stamp = now_stamp()
     accepted_path = OUTPUT_DIR / f"Personas {stamp}.csv"
     skipped_path = SKIPPED_DIR / f"Skipped prospects {stamp}.csv"
-    
+
     # Ensure Prospect Id is string before saving
     if "Prospect Id" in final_df.columns:
         final_df = final_df.copy()
@@ -285,12 +323,31 @@ def save_outputs(final_df: pd.DataFrame, skipped_df: pd.DataFrame) -> tuple[str,
     if "Prospect Id" in skipped_df.columns:
         skipped_df = skipped_df.copy()
         skipped_df["Prospect Id"] = skipped_df["Prospect Id"].astype(str)
-    
+
     # Save with quoting to ensure Prospect IDs are treated as text
     # This prevents Excel from auto-converting to scientific notation
     final_df.to_csv(accepted_path, index=False, quoting=csv.QUOTE_ALL)
     skipped_df.to_csv(skipped_path, index=False, quoting=csv.QUOTE_ALL)
-    
+
+    # Import to Hubspot if requested
+    if import_to_hubspot and not final_df.empty:
+        try:
+            from hubspot_client import import_classified_contacts
+            print("\n========= Importing to Hubspot =========")
+            stats = import_classified_contacts(final_df, update_existing=True)
+            print("Hubspot import complete:")
+            print(f"  Updated: {stats['updated']}")
+            print(f"  Created: {stats['created']}")
+            print(f"  Failed: {stats['failed']}")
+            if stats['errors']:
+                print("  Errors (first 10):")
+                for err in stats['errors'][:10]:
+                    print(f"    - {err}")
+        except ImportError:
+            print("Warning: Hubspot integration not available. Skipping import.")
+        except (ValueError, RuntimeError, KeyError) as e:
+            print(f"Warning: Failed to import to Hubspot: {e}")
+
     return str(accepted_path), str(skipped_path)
 
 

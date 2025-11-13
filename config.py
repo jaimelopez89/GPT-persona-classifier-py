@@ -60,3 +60,9 @@ VALID_PERSONAS = {
     "Data User", "Application Developer", "Real-time Specialist",
     "Operator/Systems Administrator", "Technical Decision Maker", "Not a target",
 }
+
+# ===== Hubspot Integration =====
+# Optional Hubspot report ID to pull contacts from
+# Set this to automatically pull data from a Hubspot report instead of using a file
+# Leave as None to use file-based input
+HUBSPOT_REPORT_ID = None  # Example: "12345678"

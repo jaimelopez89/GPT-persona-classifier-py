@@ -26,7 +26,7 @@ from tqdm import tqdm
 from config import (
     STREAM_MODEL, TARGET_TPM_BUDGET, BASE_SLEEP_SEC, MAX_RETRIES, INITIAL_BACKOFF,
     MAX_BACKOFF, MIN_CHUNK, MAX_CHUNK, SAFETY_TOKEN_PER_ROW, MAX_PASSES, VALID_PERSONAS,
-    FRAME_FILE, PERSONAS_FILE
+    FRAME_FILE, PERSONAS_FILE, OUTPUT_DIR
 )
 from io_utils import load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs, resolve_input_file
 from parsing import sanitize_job_title, parse_llm_csv, determine_skip_reason
@@ -96,11 +96,11 @@ def main(input_file_path: str):
     df = load_input_csv(input_file_path)
     df = filter_emails(df, "Email")
     print(f"After email filter: {len(df)} prospects.")
-    
+
     # Filter out rows with empty job titles (check for both pandas NaN and empty strings)
     df = df[df["Job Title"].notna() & (df["Job Title"].astype(str).str.strip() != "")]
     print(f"After non-empty Job Title filter: {len(df)} prospects.")
-    
+
     df = df[["Prospect Id", "Email", "Job Title"]]
     print(f"Final: {len(df)} prospects to process.")
 
@@ -192,8 +192,8 @@ def main(input_file_path: str):
     final_df = final_df.drop_duplicates(subset=["Prospect Id"], keep="first")
     final_df = final_df[final_df["Persona"].isin(VALID_PERSONAS)]
 
-    # Save outputs
-    accepted_path, skipped_path = save_outputs(final_df, skipped_df)
+    # Save outputs (import_to_hubspot will be handled by command line flag)
+    accepted_path, skipped_path = save_outputs(final_df, skipped_df, import_to_hubspot=False)
     print("\n========= Processing Results =========")
     print(f"{len(final_df)} prospects updated")
     print(f"{len(skipped_df)} prospects skipped")
@@ -237,9 +237,49 @@ def _resolve_input_path(arg_path: str | None) -> str:
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Streaming (adaptive) enrichment")
-    # --input is now optional; we’ll prompt if missing
-    ap.add_argument("--input", required=False, help="Path to prospects CSV (if omitted, you will be prompted)")
+    # --input is now optional; we'll prompt if missing, or use Hubspot if configured
+    ap.add_argument("--input", required=False, help="Path to prospects CSV/zip (if omitted, will prompt or use Hubspot)")
+    ap.add_argument("--hubspot-import", action="store_true", help="Import classified results to Hubspot after processing")
+    ap.add_argument("--hubspot-report", type=str, default=None, help="Hubspot report ID to pull data from (overrides config)")
     args = ap.parse_args()
 
+    # Handle Hubspot report ID override
+    if args.hubspot_report:
+        import config
+        config.HUBSPOT_REPORT_ID = args.hubspot_report
+        args.input = None  # Force Hubspot pull
+
     input_path = _resolve_input_path(args.input)
+
+    # Modify main to accept import flag
+    # For now, we'll add the import after main completes
     main(input_path)
+
+    # Import to Hubspot if requested
+    if args.hubspot_import:
+        try:
+            import glob
+            import pandas as pd
+            from hubspot_client import import_classified_contacts
+
+            # Find the most recent accepted file
+            accepted_files = sorted(glob.glob(str(OUTPUT_DIR / "Personas *.csv")), reverse=True)
+            if accepted_files:
+                print("\n========= Importing to Hubspot =========")
+                print(f"Loading {accepted_files[0]}...")
+                import_df = pd.read_csv(accepted_files[0])
+                stats = import_classified_contacts(import_df, update_existing=True)
+                print("\nHubspot import complete:")
+                print(f"  Updated: {stats['updated']}")
+                print(f"  Created: {stats['created']}")
+                print(f"  Failed: {stats['failed']}")
+                if stats['errors']:
+                    print("  Errors (first 10):")
+                    for err in stats['errors'][:10]:
+                        print(f"    - {err}")
+            else:
+                print("Warning: No accepted file found to import to Hubspot")
+        except ImportError:
+            print("Warning: Hubspot integration not available. Install hubspot-api-client.")
+        except (ValueError, RuntimeError, KeyError) as e:
+            print(f"Error importing to Hubspot: {e}")

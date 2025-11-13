@@ -66,11 +66,11 @@ def main(input_file_path: str, resume_batch_id: str | None = None, print_status:
     df = load_input_csv(input_file_path)
     df = filter_emails(df, "Email")
     print(f"After email filter: {len(df)} prospects.")
-    
+
     # Filter out rows with empty job titles (check for both pandas NaN and empty strings)
     df = df[df["Job Title"].notna() & (df["Job Title"].astype(str).str.strip() != "")]
     print(f"After non-empty Job Title filter: {len(df)} prospects.")
-    
+
     df = df[["Prospect Id", "Email", "Job Title"]]
     if df.empty:
         print("No valid rows to process.")
@@ -190,11 +190,48 @@ def _resolve_input_path(arg_path: str | None) -> str:
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Batch enrichment")
-    # --input optional; prompt if not supplied
-    ap.add_argument("--input", required=False, help="Path to prospects CSV (if omitted, you will be prompted)")
+    # --input optional; prompt if not supplied, or use Hubspot if configured
+    ap.add_argument("--input", required=False, help="Path to prospects CSV/zip (if omitted, will prompt or use Hubspot)")
     ap.add_argument("--resume-batch-id", default=None)
     ap.add_argument("--print-status", action="store_true")
+    ap.add_argument("--hubspot-import", action="store_true", help="Import classified results to Hubspot after processing")
+    ap.add_argument("--hubspot-report", type=str, default=None, help="Hubspot report ID to pull data from (overrides config)")
     args = ap.parse_args()
+
+    # Handle Hubspot report ID override
+    if args.hubspot_report:
+        import config
+        config.HUBSPOT_REPORT_ID = args.hubspot_report
+        args.input = None  # Force Hubspot pull
 
     input_path = _resolve_input_path(args.input)
     main(input_path, args.resume_batch_id, args.print_status)
+
+    # Import to Hubspot if requested
+    if args.hubspot_import:
+        try:
+            import glob
+            from config import OUTPUT_DIR
+            from hubspot_client import import_classified_contacts
+
+            # Find the most recent accepted file
+            accepted_files = sorted(glob.glob(str(OUTPUT_DIR / "Personas *.csv")), reverse=True)
+            if accepted_files:
+                print("\n========= Importing to Hubspot =========")
+                print(f"Loading {accepted_files[0]}...")
+                import_df = pd.read_csv(accepted_files[0])
+                stats = import_classified_contacts(import_df, update_existing=True)
+                print("\nHubspot import complete:")
+                print(f"  Updated: {stats['updated']}")
+                print(f"  Created: {stats['created']}")
+                print(f"  Failed: {stats['failed']}")
+                if stats['errors']:
+                    print("  Errors (first 10):")
+                    for err in stats['errors'][:10]:
+                        print(f"    - {err}")
+            else:
+                print("Warning: No accepted file found to import to Hubspot")
+        except ImportError:
+            print("Warning: Hubspot integration not available. Install hubspot-api-client.")
+        except (ValueError, RuntimeError, KeyError) as e:
+            print(f"Error importing to Hubspot: {e}")
