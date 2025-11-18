@@ -27,3 +27,7 @@ requests-toolbelt>=1.0.0
 # Hubspot API integration
 hubspot-api-client>=9.0.0
 
+# Excel file support
+openpyxl>=3.1.2  # For .xlsx files
+xlrd<2.0  # For .xls files (xlrd 2.0+ removed .xls support)
+
