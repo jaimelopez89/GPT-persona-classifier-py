@@ -20,12 +20,23 @@ import json
 import pandas as pd
 
 from config import BATCH_MODEL, FRAME_FILE, PERSONAS_FILE, VALID_PERSONAS
-from io_utils import load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs, save_checkpoint_raw, resolve_input_file
-from parsing import sanitize_job_title, parse_batch_output_jsonl
-from batch_core import upload_file_for_batch, create_batch, poll_batch_until_done, download_file_content
+from io_utils import (
+    load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs,
+    save_checkpoint_raw, resolve_input_file
+)
+from parsing import (
+    sanitize_job_title, parse_batch_output_jsonl, fuzzy_match_invalid_personas
+)
+from batch_core import (
+    upload_file_for_batch, create_batch, poll_batch_until_done,
+    download_file_content
+)
 
 
-def build_requests_jsonl(df: pd.DataFrame, system_instructions: str, model: str, temperature: float = 0.0) -> bytes:
+def build_requests_jsonl(
+    df: pd.DataFrame, system_instructions: str, model: str,
+    temperature: float = 0.0
+) -> bytes:
     """Build a JSONL file for OpenAI Batch API from prospect data.
 
     Creates a JSONL file where each line is a batch API request for one prospect.
@@ -44,24 +55,64 @@ def build_requests_jsonl(df: pd.DataFrame, system_instructions: str, model: str,
     sys_msg = (
         system_instructions.strip()
         + "\n\nCRITICAL OUTPUT FORMAT: Respond with a SINGLE JSON object only.\n"
-        + 'Required keys: {"persona": <one of the defined personas>, "certainty": <0-100 integer or %>}.\n'
+        + 'Required keys: {"persona": <one of the defined personas>, '
+        + '"certainty": <0-100 integer or %>}.\n'
         + "Do not include extra keys, code fences, or commentary."
     )
     items = []
     for _, r in df.iterrows():
         pid = str(r["Prospect Id"])
         # Format user message with prospect ID and sanitized job title
-        user = f"Prospect Id: {pid}\nJob Title: {sanitize_job_title(r['Job Title'])}\n\nReturn ONLY the JSON."
+        user = (
+            f"Prospect Id: {pid}\nJob Title: {sanitize_job_title(r['Job Title'])}"
+            f"\n\nReturn ONLY the JSON."
+        )
         items.append({
             "custom_id": pid,  # Use prospect ID as custom_id for tracking
             "method": "POST",
             "url": "/v1/chat/completions",
-            "body": {"model": model, "messages": [{"role":"system","content":sys_msg},{"role":"user","content":user}], "temperature": temperature}
+            "body": {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": sys_msg},
+                    {"role": "user", "content": user}
+                ],
+                "temperature": temperature
+            }
         })
     # Convert to JSONL format (one JSON object per line)
     return ("\n".join(json.dumps(x, ensure_ascii=False) for x in items)).encode("utf-8")
 
 def main(input_file_path: str, resume_batch_id: str | None = None, print_status: bool = True):
+    """Main processing function for batch persona enrichment.
+
+    Loads prospect data from a CSV/Excel file, filters for valid prospects,
+    creates batch requests for the OpenAI Batch API, polls for completion,
+    and saves accepted and skipped prospects to separate output files.
+
+    The function can create a new batch job or resume an existing one by
+    providing a batch ID. It implements fuzzy matching to fix invalid
+    personas before saving results.
+
+    Args:
+        input_file_path: Path to the input file (CSV, XLS, XLSX, or Hubspot zip).
+            The file should contain at least "Prospect Id", "Email", and
+            "Job Title" columns.
+        resume_batch_id: Optional batch ID to resume an existing batch job
+            instead of creating a new one. If provided, skips file upload
+            and batch creation steps.
+        print_status: If True, prints polling status updates during batch
+            processing. Default is True.
+
+    Note:
+        Output files are saved to OUTPUT_DIR and SKIPPED_DIR as defined in config.
+        The function prints progress information and final statistics including
+        the batch ID for potential resumption.
+
+    Raises:
+        RuntimeError: If the batch does not complete successfully or if
+            output file ID is missing from the batch response.
+    """
     api_key = load_env_or_fail()
     df = load_input_csv(input_file_path)
     df = filter_emails(df, "Email")
@@ -144,8 +195,8 @@ def main(input_file_path: str, resume_batch_id: str | None = None, print_status:
     if not skipped_df.empty:
         corrected_df, still_skipped_df = fuzzy_match_invalid_personas(skipped_df)
         if not corrected_df.empty:
-            print(f"\n========= Fuzzy Matching Results =========")
-            print(f"Corrected {len(corrected_df)} invalid personas using fuzzy matching")
+            print("\n========= Fuzzy Matching Results =========")
+            print(f"Corrected {len(corrected_df)} invalid persona(s) using fuzzy matching")
             # Add corrected prospects to final_df
             final_df = pd.concat([final_df, corrected_df], ignore_index=True)
             skipped_df = still_skipped_df
@@ -180,7 +231,10 @@ def _resolve_input_path(arg_path: str | None) -> str:
     """
     if not arg_path:
         try:
-            arg_path = input("Input the absolute path of the input file with prospects and no persona: ").strip()
+            arg_path = input(
+                "Input the absolute path of the input file with prospects "
+                "and no persona: "
+            ).strip()
         except EOFError:
             print("No input received and --input not provided. Exiting.")
             sys.exit(1)
@@ -202,11 +256,20 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Batch enrichment")
     # --input optional; prompt if not supplied, or use Hubspot if configured
-    ap.add_argument("--input", required=False, help="Path to prospects CSV/zip (if omitted, will prompt or use Hubspot)")
+    ap.add_argument(
+        "--input", required=False,
+        help="Path to prospects CSV/zip (if omitted, will prompt or use Hubspot)"
+    )
     ap.add_argument("--resume-batch-id", default=None)
     ap.add_argument("--print-status", action="store_true")
-    ap.add_argument("--hubspot-import", action="store_true", help="Import classified results to Hubspot after processing")
-    ap.add_argument("--hubspot-report", type=str, default=None, help="Hubspot report ID to pull data from (overrides config)")
+    ap.add_argument(
+        "--hubspot-import", action="store_true",
+        help="Import classified results to Hubspot after processing"
+    )
+    ap.add_argument(
+        "--hubspot-report", type=str, default=None,
+        help="Hubspot report ID to pull data from (overrides config)"
+    )
     args = ap.parse_args()
 
     # Handle Hubspot report ID override
@@ -246,3 +309,4 @@ if __name__ == "__main__":
             print("Warning: Hubspot integration not available. Install hubspot-api-client.")
         except (ValueError, RuntimeError, KeyError) as e:
             print(f"Error importing to Hubspot: {e}")
+            
