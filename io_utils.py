@@ -2,9 +2,10 @@
 
 This module provides functions for:
 - Loading environment variables and configuration
-- Reading and writing CSV files
+- Reading and writing CSV and Excel files (XLS, XLSX)
 - Filtering and processing prospect data
 - Managing output directories and checkpoint files
+- Hubspot integration (zip extraction, API data pulling)
 
 Author: Jaime López, 2025
 """
@@ -202,18 +203,18 @@ def pull_hubspot_data(report_id: str | None = None) -> pd.DataFrame:
 
 
 def resolve_input_file(input_path: str | None = None) -> str:
-    """Resolve input file path, handling CSV files, Hubspot zip files, or Hubspot API.
+    """Resolve input file path, handling CSV files, Excel files, Hubspot zip files, or Hubspot API.
 
     If input_path is None and HUBSPOT_REPORT_ID is set, pulls data from Hubspot.
     If the input is a zip file, it will be extracted and the contacts CSV
-    will be located and returned. If it's already a CSV, it's returned as-is.
+    will be located and returned. If it's a CSV or Excel file, it's returned as-is.
 
     Args:
-        input_path: Optional path to input file (CSV or zip). If None and
+        input_path: Optional path to input file (CSV, XLS, XLSX, or zip). If None and
             HUBSPOT_REPORT_ID is set, pulls from Hubspot API.
 
     Returns:
-        Path to the CSV file to process, or raises if pulling from Hubspot.
+        Path to the file to process (CSV, XLS, or XLSX), or raises if pulling from Hubspot.
 
     Raises:
         ValueError: If file format is not supported or expected files are missing.
@@ -239,7 +240,18 @@ def resolve_input_file(input_path: str | None = None) -> str:
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"Input file not found: {input_path}")
 
-    # Check if it's a zip file
+    input_lower = input_path.lower()
+
+    # Check file extensions first (before zip check, since XLSX files are ZIP archives)
+    # Check if it's a CSV file
+    if input_lower.endswith('.csv'):
+        return input_path
+
+    # Check if it's an Excel file
+    if input_lower.endswith(('.xls', '.xlsx')):
+        return input_path
+
+    # Check if it's a zip file (only if not already identified as Excel)
     if zipfile.is_zipfile(input_path):
         print(f"Detected Hubspot zip file: {input_path}")
         print("Extracting and locating contacts CSV...")
@@ -247,35 +259,80 @@ def resolve_input_file(input_path: str | None = None) -> str:
         print(f"Using extracted CSV: {csv_path}")
         return csv_path
 
-    # Check if it's a CSV file
-    if input_path.lower().endswith('.csv'):
-        return input_path
-
     # Unknown file type
     raise ValueError(
-        f"Unsupported file type. Expected CSV file or Hubspot zip file, "
+        f"Unsupported file type. Expected CSV, XLS, XLSX file or Hubspot zip file, "
         f"got: {os.path.basename(input_path)}"
     )
 
 
 def load_input_csv(path: str) -> pd.DataFrame:
-    """Load a CSV file and normalize column names and types.
+    """Load a CSV or Excel file and normalize column names and types.
 
+    Handles CSV, XLS, and XLSX files. For Excel files with multiple sheets,
+    skips "HubSpot Export Summary" sheets and uses the first data sheet.
     Handles column name normalization (Record ID -> Prospect Id) and ensures
     common columns are treated as strings. Prospect IDs are read as strings
     to prevent Excel's scientific notation issues.
 
     Args:
-        path: Path to the CSV file to load.
+        path: Path to the CSV, XLS, or XLSX file to load.
 
     Returns:
         DataFrame with normalized columns and string types for key fields.
         Prospect IDs are preserved as strings to prevent scientific notation conversion.
         Empty values are converted from "nan" strings to empty strings.
+
+    Raises:
+        ValueError: If Excel file cannot be read or no valid data sheet is found.
+        ImportError: If required Excel libraries (openpyxl/xlrd) are not installed.
     """
-    # Read CSV with Prospect Id as string to prevent scientific notation
-    # Use dtype=str for all columns to preserve exact values
-    df = pd.read_csv(path, dtype=str, keep_default_na=False)
+    path_lower = path.lower()
+
+    # Handle Excel files (.xls, .xlsx)
+    if path_lower.endswith(('.xls', '.xlsx')):
+        try:
+            # Read all sheet names first
+            excel_file = pd.ExcelFile(path)
+            sheet_names = excel_file.sheet_names
+
+            # Filter out "HubSpot Export Summary" sheets
+            data_sheets = [s for s in sheet_names if s != "HubSpot Export Summary"]
+
+            if not data_sheets:
+                raise ValueError(
+                    f"No data sheets found in Excel file. "
+                    f"All sheets are named 'HubSpot Export Summary' or file is empty."
+                )
+
+            # Use the first data sheet (or combine if multiple exist)
+            if len(data_sheets) == 1:
+                print(f"Reading Excel sheet: {data_sheets[0]}")
+                df = pd.read_excel(path, sheet_name=data_sheets[0], dtype=str, keep_default_na=False)
+            else:
+                # Multiple data sheets - combine them
+                print(f"Found {len(data_sheets)} data sheets, combining: {', '.join(data_sheets)}")
+                dfs = []
+                for sheet_name in data_sheets:
+                    sheet_df = pd.read_excel(path, sheet_name=sheet_name, dtype=str, keep_default_na=False)
+                    dfs.append(sheet_df)
+                df = pd.concat(dfs, ignore_index=True)
+                print(f"Combined {len(data_sheets)} sheets into {len(df)} rows")
+
+        except ImportError as e:
+            if "openpyxl" in str(e) or "xlrd" in str(e):
+                raise ImportError(
+                    "Excel file support requires openpyxl (for .xlsx) and xlrd<2.0 (for .xls). "
+                    "Install with: pip install openpyxl 'xlrd<2.0'"
+                ) from e
+            raise
+        except (ValueError, FileNotFoundError, PermissionError, OSError) as e:
+            raise ValueError(f"Error reading Excel file {path}: {e}") from e
+
+    else:
+        # Read CSV with Prospect Id as string to prevent scientific notation
+        # Use dtype=str for all columns to preserve exact values
+        df = pd.read_csv(path, dtype=str, keep_default_na=False)
 
     # Normalize column name if present
     if "Record ID" in df.columns and "Prospect Id" not in df.columns:
