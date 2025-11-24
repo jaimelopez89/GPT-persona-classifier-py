@@ -5,6 +5,7 @@ This module provides functions for:
 - Parsing JSONL output from batch API responses
 - Sanitizing job titles
 - Determining skip reasons for invalid responses
+- Fuzzy matching invalid personas to valid ones
 
 Author: Jaime López, 2025
 """
@@ -13,6 +14,7 @@ import io
 import re
 import json
 import pandas as pd
+from difflib import get_close_matches
 from config import VALID_PERSONAS
 
 
@@ -76,6 +78,79 @@ def determine_skip_reason(row: pd.Series) -> str | None:
     if persona not in VALID_PERSONAS:
         return f"Invalid persona: {persona}"
     return None
+
+
+def fuzzy_match_invalid_personas(skipped_df: pd.DataFrame, similarity_threshold: float = 0.6) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Attempt to fix invalid personas by fuzzy matching to valid ones.
+
+    Takes skipped prospects with "Invalid persona:" skip reasons and attempts
+    to match them to valid personas using fuzzy string matching. If a match
+    is found above the similarity threshold, the persona is corrected and
+    the skip reason is cleared.
+
+    Args:
+        skipped_df: DataFrame containing skipped prospects with "Skip Reason" column.
+        similarity_threshold: Minimum similarity ratio (0-1) to accept a match.
+            Default is 0.6 (60% similarity).
+
+    Returns:
+        Tuple of (corrected_df, still_skipped_df):
+        - corrected_df: Prospects that were successfully matched and corrected.
+        - still_skipped_df: Prospects that couldn't be matched or had other skip reasons.
+    """
+    if skipped_df.empty:
+        return pd.DataFrame(), skipped_df.copy()
+
+    # Filter for invalid persona skip reasons
+    invalid_mask = skipped_df["Skip Reason"].astype(str).str.startswith("Invalid persona:", na=False)
+    invalid_df = skipped_df[invalid_mask].copy()
+    other_skipped = skipped_df[~invalid_mask].copy()
+
+    if invalid_df.empty:
+        return pd.DataFrame(), skipped_df.copy()
+
+    corrected_rows = []
+    still_invalid_rows = []
+
+    for idx, row in invalid_df.iterrows():
+        skip_reason = str(row.get("Skip Reason", ""))
+        # Extract the invalid persona from "Invalid persona: <persona>"
+        invalid_persona = skip_reason.replace("Invalid persona:", "").strip()
+        original_persona = str(row.get("Persona", "") or "").strip()
+
+        # Use the original persona if available, otherwise use the extracted one
+        persona_to_match = original_persona if original_persona else invalid_persona
+
+        # Find closest matches from valid personas
+        matches = get_close_matches(
+            persona_to_match,
+            list(VALID_PERSONAS),
+            n=1,
+            cutoff=similarity_threshold
+        )
+
+        if matches:
+            # Found a match - correct the persona
+            matched_persona = matches[0]
+            corrected_row = row.copy()
+            corrected_row["Persona"] = matched_persona
+            corrected_row["Skip Reason"] = None
+            corrected_rows.append(corrected_row)
+        else:
+            # No match found - keep as skipped
+            still_invalid_rows.append(row)
+
+    # Combine corrected and still-invalid DataFrames
+    corrected_df = pd.DataFrame(corrected_rows) if corrected_rows else pd.DataFrame()
+    still_invalid_df = pd.DataFrame(still_invalid_rows) if still_invalid_rows else pd.DataFrame()
+
+    # Combine with other skipped prospects
+    if not other_skipped.empty:
+        still_skipped_df = pd.concat([still_invalid_df, other_skipped], ignore_index=True)
+    else:
+        still_skipped_df = still_invalid_df
+
+    return corrected_df, still_skipped_df
 
 
 def parse_batch_output_jsonl(jsonl_str: str) -> tuple[dict[str, str], dict[str, str]]:

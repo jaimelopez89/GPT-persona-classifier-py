@@ -21,6 +21,7 @@ import os
 import sys
 import traceback
 import requests
+import pandas as pd
 from tqdm import tqdm
 
 from config import (
@@ -28,8 +29,14 @@ from config import (
     MAX_BACKOFF, MIN_CHUNK, MAX_CHUNK, SAFETY_TOKEN_PER_ROW, MAX_PASSES, VALID_PERSONAS,
     FRAME_FILE, PERSONAS_FILE, OUTPUT_DIR
 )
-from io_utils import load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs, resolve_input_file
-from parsing import sanitize_job_title, parse_llm_csv, determine_skip_reason
+from io_utils import (
+    load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs,
+    resolve_input_file
+)
+from parsing import (
+    sanitize_job_title, parse_llm_csv, determine_skip_reason,
+    fuzzy_match_invalid_personas
+)
 from llm_client import create_chat_session, ask_chat_session, extract_retry_after_seconds
 
 
@@ -82,7 +89,10 @@ def call_with_retries(session: dict, payload_text: str, chunk_size: int) -> tupl
                 # Reduce chunk size to lower token pressure
                 new_size = max(MIN_CHUNK, math.floor(local_chunk / 2))
                 if new_size < local_chunk:
-                    print(f"Rate limit: chunk {local_chunk} → {new_size}, retrying in {sleep_for:.1f}s")
+                    print(
+                        f"Rate limit: chunk {local_chunk} → {new_size}, "
+                        f"retrying in {sleep_for:.1f}s"
+                    )
                     local_chunk = new_size
                 else:
                     print(f"Rate limit: retrying in {sleep_for:.1f}s with chunk {local_chunk}")
@@ -91,7 +101,27 @@ def call_with_retries(session: dict, payload_text: str, chunk_size: int) -> tupl
             time.sleep(sleep_for)
     raise last_err
 
+
 def main(input_file_path: str):
+    """Main processing function for streaming persona enrichment.
+
+    Loads prospect data from a CSV/Excel file, filters for valid prospects,
+    processes them through the LLM API with adaptive chunking and retry logic,
+    and saves accepted and skipped prospects to separate output files.
+
+    The function implements multi-pass processing to retry failed prospects
+    with smaller chunk sizes. It also attempts to fix invalid personas using
+    fuzzy matching before saving results.
+
+    Args:
+        input_file_path: Path to the input file (CSV, XLS, XLSX, or Hubspot zip).
+            The file should contain at least "Prospect Id", "Email", and
+            "Job Title" columns.
+
+    Note:
+        Output files are saved to OUTPUT_DIR and SKIPPED_DIR as defined in config.
+        The function prints progress information and final statistics.
+    """
     load_env_or_fail()
     df = load_input_csv(input_file_path)
     df = filter_emails(df, "Email")
@@ -120,12 +150,15 @@ def main(input_file_path: str):
     for p in range(1, MAX_PASSES + 1):
         if not remaining_ids:
             break
-        print(f"\n===== PASS {p}/{MAX_PASSES} | remaining={len(remaining_ids)} | chunk={current_chunk} =====")
+        print(
+            f"\n===== PASS {p}/{MAX_PASSES} | remaining={len(remaining_ids)} | "
+            f"chunk={current_chunk} ====="
+        )
         df_pass = df[df["Prospect Id"].isin(remaining_ids)].copy()
         failed_ids = set()
 
         i = 0
-        with tqdm(total=len(df_pass)) as bar:
+        with tqdm(total=len(df_pass)) as progress_bar:
             while i < len(df_pass):
                 end_i = min(i + current_chunk, len(df_pass))
                 chunk = df_pass.iloc[i:end_i].copy()
@@ -137,12 +170,20 @@ def main(input_file_path: str):
                 pace = max(BASE_SLEEP_SEC, est / max(1, TARGET_TPM_BUDGET) * 60.0)
 
                 # Format chunk as CSV-like table for LLM
-                job_titles_table = "\n".join([f"{r['Prospect Id']},{r['Job Title']}" for _, r in chunk.iterrows()])
+                job_titles_table = "\n".join([
+                    f"{r['Prospect Id']},{r['Job Title']}"
+                    for _, r in chunk.iterrows()
+                ])
                 try:
-                    resp, current_chunk = call_with_retries(session, job_titles_table, current_chunk)
+                    resp, current_chunk = call_with_retries(
+                        session, job_titles_table, current_chunk
+                    )
                     if resp:
                         all_results.append(resp)
-                except (TimeoutError, requests.HTTPError, requests.exceptions.RequestException, RuntimeError) as e:
+                except (
+                    TimeoutError, requests.HTTPError,
+                    requests.exceptions.RequestException, RuntimeError
+                ) as e:
                     failed_ids.update(chunk["Prospect Id"].tolist())
                     # Print a clear message plus full traceback so the root cause is visible
                     print("\n===== ERROR DURING CHUNK PROCESSING =====")
@@ -154,7 +195,7 @@ def main(input_file_path: str):
 
                 # Pacing with jitter to avoid synchronized requests
                 time.sleep(pace + random.uniform(0, 0.75))
-                bar.update(end_i - i)
+                progress_bar.update(end_i - i)
                 i = end_i
 
         # Parse results and identify successfully processed prospects
@@ -162,8 +203,11 @@ def main(input_file_path: str):
         formatted = parse_llm_csv(enriched)
         ok_ids = set()
         if not formatted.empty:
-            formatted = formatted.drop_duplicates(subset=["Prospect Id"], keep="first")
-            ok_ids = set(formatted[formatted["Persona"].isin(VALID_PERSONAS)]["Prospect Id"].astype(str))
+            formatted = formatted.drop_duplicates(
+                subset=["Prospect Id"], keep="first"
+            )
+            valid_personas = formatted[formatted["Persona"].isin(VALID_PERSONAS)]
+            ok_ids = set(valid_personas["Prospect Id"].astype(str))
 
         # Update remaining IDs: remove successful ones, add failed ones
         before = len(remaining_ids)
@@ -185,6 +229,16 @@ def main(input_file_path: str):
     # Separate accepted and skipped prospects
     final_df = merged[merged["Skip Reason"].isna()].copy()
     skipped_df = merged[merged["Skip Reason"].notna()].copy()
+
+    # Attempt to fix invalid personas using fuzzy matching
+    if not skipped_df.empty:
+        corrected_df, still_skipped_df = fuzzy_match_invalid_personas(skipped_df)
+        if not corrected_df.empty:
+            print("\n========= Fuzzy Matching Results =========")
+            print(f"Corrected {len(corrected_df)} invalid persona(s) using fuzzy matching")
+            # Add corrected prospects to final_df
+            final_df = pd.concat([final_df, corrected_df], ignore_index=True)
+            skipped_df = still_skipped_df
 
     # Clean up duplicate Job Title columns from merge
     if "Job Title_y" in final_df.columns:
@@ -215,7 +269,10 @@ def _resolve_input_path(arg_path: str | None) -> str:
     """
     if not arg_path:
         try:
-            arg_path = input("Input the absolute path of the input file with prospects and no persona: ").strip()
+            arg_path = input(
+                "Input the absolute path of the input file with prospects "
+                "and no persona: "
+            ).strip()
         except EOFError:
             print("No input received and --input not provided. Exiting.")
             sys.exit(1)
@@ -234,13 +291,23 @@ def _resolve_input_path(arg_path: str | None) -> str:
         print(f"Error: {e}")
         sys.exit(1)
 
+
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Streaming (adaptive) enrichment")
     # --input is now optional; we'll prompt if missing, or use Hubspot if configured
-    ap.add_argument("--input", required=False, help="Path to prospects CSV/zip (if omitted, will prompt or use Hubspot)")
-    ap.add_argument("--hubspot-import", action="store_true", help="Import classified results to Hubspot after processing")
-    ap.add_argument("--hubspot-report", type=str, default=None, help="Hubspot report ID to pull data from (overrides config)")
+    ap.add_argument(
+        "--input", required=False,
+        help="Path to prospects CSV/zip (if omitted, will prompt or use Hubspot)"
+    )
+    ap.add_argument(
+        "--hubspot-import", action="store_true",
+        help="Import classified results to Hubspot after processing"
+    )
+    ap.add_argument(
+        "--hubspot-report", type=str, default=None,
+        help="Hubspot report ID to pull data from (overrides config)"
+    )
     args = ap.parse_args()
 
     # Handle Hubspot report ID override
@@ -259,7 +326,6 @@ if __name__ == "__main__":
     if args.hubspot_import:
         try:
             import glob
-            import pandas as pd
             from hubspot_client import import_classified_contacts
 
             # Find the most recent accepted file

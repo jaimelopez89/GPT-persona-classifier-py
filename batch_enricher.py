@@ -139,6 +139,17 @@ def main(input_file_path: str, resume_batch_id: str | None = None, print_status:
     merged["Skip Reason"] = merged.apply(skip_reason, axis=1)
     final_df = merged[merged["Skip Reason"].isna()].copy()
     skipped_df = merged[merged["Skip Reason"].notna()].copy()
+
+    # Attempt to fix invalid personas using fuzzy matching
+    if not skipped_df.empty:
+        corrected_df, still_skipped_df = fuzzy_match_invalid_personas(skipped_df)
+        if not corrected_df.empty:
+            print(f"\n========= Fuzzy Matching Results =========")
+            print(f"Corrected {len(corrected_df)} invalid personas using fuzzy matching")
+            # Add corrected prospects to final_df
+            final_df = pd.concat([final_df, corrected_df], ignore_index=True)
+            skipped_df = still_skipped_df
+
     # Clean up duplicates and validate personas
     final_df = final_df.drop_duplicates(subset=["Prospect Id"], keep="first")
     final_df = final_df[final_df["Persona"].isin(VALID_PERSONAS)]
