@@ -20,8 +20,13 @@ import json
 import pandas as pd
 
 from config import BATCH_MODEL, FRAME_FILE, PERSONAS_FILE, VALID_PERSONAS
-from io_utils import load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs, save_checkpoint_raw, resolve_input_file
-from parsing import sanitize_job_title, parse_batch_output_jsonl
+from io_utils import (
+    load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs,
+    save_checkpoint_raw, resolve_input_file
+)
+from parsing import (
+    sanitize_job_title, parse_batch_output_jsonl, fuzzy_match_invalid_personas
+)
 from batch_core import upload_file_for_batch, create_batch, poll_batch_until_done, download_file_content
 
 
@@ -66,11 +71,11 @@ def main(input_file_path: str, resume_batch_id: str | None = None, print_status:
     df = load_input_csv(input_file_path)
     df = filter_emails(df, "Email")
     print(f"After email filter: {len(df)} prospects.")
-    
+
     # Filter out rows with empty job titles (check for both pandas NaN and empty strings)
     df = df[df["Job Title"].notna() & (df["Job Title"].astype(str).str.strip() != "")]
     print(f"After non-empty Job Title filter: {len(df)} prospects.")
-    
+
     df = df[["Prospect Id", "Email", "Job Title"]]
     if df.empty:
         print("No valid rows to process.")
@@ -142,6 +147,25 @@ def main(input_file_path: str, resume_batch_id: str | None = None, print_status:
     # Clean up duplicates and validate personas
     final_df = final_df.drop_duplicates(subset=["Prospect Id"], keep="first")
     final_df = final_df[final_df["Persona"].isin(VALID_PERSONAS)]
+
+    # Try to fuzzy-match invalid personas to valid ones
+    if not skipped_df.empty:
+        corrected_df, still_skipped_df = fuzzy_match_invalid_personas(skipped_df)
+        if not corrected_df.empty:
+            print(
+                f"\nFuzzy matching corrected {len(corrected_df)} invalid personas"
+            )
+            # Merge corrected prospects back into final_df
+            # Need to merge with original data to get all columns
+            corrected_merged = df.merge(
+                corrected_df[["Prospect Id", "Persona", "Persona Certainty"]],
+                on="Prospect Id", how="inner"
+            )
+            final_df = pd.concat([final_df, corrected_merged], ignore_index=True)
+            final_df = final_df.drop_duplicates(
+                subset=["Prospect Id"], keep="first"
+            )
+            skipped_df = still_skipped_df
 
     # Save results
     accepted_path, skipped_path = save_outputs(final_df, skipped_df)

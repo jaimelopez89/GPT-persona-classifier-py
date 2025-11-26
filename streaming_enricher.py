@@ -21,6 +21,7 @@ import os
 import sys
 import traceback
 import requests
+import pandas as pd
 from tqdm import tqdm
 
 from config import (
@@ -28,8 +29,14 @@ from config import (
     MAX_BACKOFF, MIN_CHUNK, MAX_CHUNK, SAFETY_TOKEN_PER_ROW, MAX_PASSES, VALID_PERSONAS,
     FRAME_FILE, PERSONAS_FILE
 )
-from io_utils import load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs, resolve_input_file
-from parsing import sanitize_job_title, parse_llm_csv, determine_skip_reason
+from io_utils import (
+    load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs,
+    resolve_input_file
+)
+from parsing import (
+    sanitize_job_title, parse_llm_csv, determine_skip_reason,
+    fuzzy_match_invalid_personas
+)
 from llm_client import create_chat_session, ask_chat_session, extract_retry_after_seconds
 
 
@@ -96,11 +103,11 @@ def main(input_file_path: str):
     df = load_input_csv(input_file_path)
     df = filter_emails(df, "Email")
     print(f"After email filter: {len(df)} prospects.")
-    
+
     # Filter out rows with empty job titles (check for both pandas NaN and empty strings)
     df = df[df["Job Title"].notna() & (df["Job Title"].astype(str).str.strip() != "")]
     print(f"After non-empty Job Title filter: {len(df)} prospects.")
-    
+
     df = df[["Prospect Id", "Email", "Job Title"]]
     print(f"Final: {len(df)} prospects to process.")
 
@@ -188,9 +195,35 @@ def main(input_file_path: str):
 
     # Clean up duplicate Job Title columns from merge
     if "Job Title_y" in final_df.columns:
-        final_df = final_df.drop(columns="Job Title_y").rename(columns={"Job Title_x": "Job Title"})
+        final_df = final_df.drop(columns="Job Title_y").rename(
+            columns={"Job Title_x": "Job Title"}
+        )
     final_df = final_df.drop_duplicates(subset=["Prospect Id"], keep="first")
     final_df = final_df[final_df["Persona"].isin(VALID_PERSONAS)]
+
+    # Try to fuzzy-match invalid personas to valid ones
+    if not skipped_df.empty:
+        corrected_df, still_skipped_df = fuzzy_match_invalid_personas(skipped_df)
+        if not corrected_df.empty:
+            print(
+                f"\nFuzzy matching corrected {len(corrected_df)} invalid personas"
+            )
+            # Merge corrected prospects back into final_df
+            # Need to merge with original data to get all columns
+            corrected_merged = df.merge(
+                corrected_df[["Prospect Id", "Persona", "Persona Certainty"]],
+                on="Prospect Id", how="inner"
+            )
+            # Clean up duplicate Job Title columns if present
+            if "Job Title_y" in corrected_merged.columns:
+                corrected_merged = corrected_merged.drop(
+                    columns="Job Title_y"
+                ).rename(columns={"Job Title_x": "Job Title"})
+            final_df = pd.concat([final_df, corrected_merged], ignore_index=True)
+            final_df = final_df.drop_duplicates(
+                subset=["Prospect Id"], keep="first"
+            )
+            skipped_df = still_skipped_df
 
     # Save outputs
     accepted_path, skipped_path = save_outputs(final_df, skipped_df)
