@@ -13,6 +13,7 @@ Author: Jaime López, 2025
 import os
 import csv
 import json
+import glob
 import zipfile
 import tempfile
 import shutil
@@ -89,8 +90,10 @@ def filter_emails(df: pd.DataFrame, col: str) -> pd.DataFrame:
         Filtered DataFrame with test/Ververica emails removed.
     """
     s = df[col].fillna("").astype(str)
-    # Removed filter that excluded test emails because it caught too many legitimate emails e.g. statestreet, testa, smartest energy, etc.
+    # Removed filter that excluded test emails because it caught too many
+    # legitimate emails e.g. statestreet, testa, smartest energy, etc.
     return df[~s.str.contains(r"@ververica", regex=True, na=False)]
+
 
 def extract_hubspot_zip(zip_path: str) -> str:
     """Extract Hubspot zip file and return path to the contacts CSV.
@@ -135,7 +138,6 @@ def extract_hubspot_zip(zip_path: str) -> str:
                 break
 
             # Try pattern matching
-            import glob
             matches = glob.glob(os.path.join(temp_dir, pattern))
             csv_matches = [m for m in matches if m.endswith('.csv') and 'summary' not in m.lower()]
             if csv_matches:
@@ -177,10 +179,14 @@ def extract_hubspot_zip(zip_path: str) -> str:
 
         return extracted_csv_path
 
-    except Exception:
+    except (ValueError, zipfile.BadZipFile, OSError, PermissionError):
         # Clean up on error
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise
+    except Exception as e:
+        # Catch-all for unexpected errors, but still clean up
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise RuntimeError(f"Unexpected error extracting Hubspot zip: {e}") from e
 
 
 def pull_hubspot_data(report_id: str | None = None) -> pd.DataFrame:
@@ -301,20 +307,27 @@ def load_input_csv(path: str) -> pd.DataFrame:
 
             if not data_sheets:
                 raise ValueError(
-                    f"No data sheets found in Excel file. "
-                    f"All sheets are named 'HubSpot Export Summary' or file is empty."
+                    "No data sheets found in Excel file. "
+                    "All sheets are named 'HubSpot Export Summary' or file is empty."
                 )
 
             # Use the first data sheet (or combine if multiple exist)
             if len(data_sheets) == 1:
                 print(f"Reading Excel sheet: {data_sheets[0]}")
-                df = pd.read_excel(path, sheet_name=data_sheets[0], dtype=str, keep_default_na=False)
+                df = pd.read_excel(
+                    path, sheet_name=data_sheets[0], dtype=str, keep_default_na=False
+                )
             else:
                 # Multiple data sheets - combine them
-                print(f"Found {len(data_sheets)} data sheets, combining: {', '.join(data_sheets)}")
+                print(
+                    f"Found {len(data_sheets)} data sheets, combining: "
+                    f"{', '.join(data_sheets)}"
+                )
                 dfs = []
                 for sheet_name in data_sheets:
-                    sheet_df = pd.read_excel(path, sheet_name=sheet_name, dtype=str, keep_default_na=False)
+                    sheet_df = pd.read_excel(
+                        path, sheet_name=sheet_name, dtype=str, keep_default_na=False
+                    )
                     dfs.append(sheet_df)
                 df = pd.concat(dfs, ignore_index=True)
                 print(f"Combined {len(data_sheets)} sheets into {len(df)} rows")
@@ -348,7 +361,10 @@ def load_input_csv(path: str) -> pd.DataFrame:
     return df
 
 
-def save_outputs(final_df: pd.DataFrame, skipped_df: pd.DataFrame, import_to_hubspot: bool = False) -> tuple[str, str]:
+def save_outputs(
+    final_df: pd.DataFrame, skipped_df: pd.DataFrame,
+    import_to_hubspot: bool = False
+) -> tuple[str, str]:
     """Save accepted and skipped prospect DataFrames to CSV files.
 
     Creates timestamped filenames and saves to OUTPUT_DIR and SKIPPED_DIR.
