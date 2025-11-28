@@ -13,13 +13,13 @@ Author: Jaime López, 2025
 import os
 import csv
 import json
+from datetime import datetime
 import glob
 import zipfile
 import tempfile
 import shutil
 from pathlib import Path
 import pandas as pd
-from datetime import datetime
 from dotenv import load_dotenv
 from config import OUTPUT_DIR, SKIPPED_DIR, CHECKPOINTS_DIR
 

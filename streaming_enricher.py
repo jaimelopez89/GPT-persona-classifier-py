@@ -89,7 +89,10 @@ def call_with_retries(session: dict, payload_text: str, chunk_size: int) -> tupl
                 # Reduce chunk size to lower token pressure
                 new_size = max(MIN_CHUNK, math.floor(local_chunk / 2))
                 if new_size < local_chunk:
-                    print(f"Rate limit: chunk {local_chunk} → {new_size}, retrying in {sleep_for:.1f}s")
+                    print(
+                        f"Rate limit: chunk {local_chunk} → {new_size}, "
+                        f"retrying in {sleep_for:.1f}s"
+                    )
                     local_chunk = new_size
                 else:
                     print(f"Rate limit: retrying in {sleep_for:.1f}s with chunk {local_chunk}")
@@ -98,7 +101,18 @@ def call_with_retries(session: dict, payload_text: str, chunk_size: int) -> tupl
             time.sleep(sleep_for)
     raise last_err
 
+
 def main(input_file_path: str):
+    """Main entry point for streaming enrichment process.
+
+    Loads prospect data, filters invalid entries, processes through LLM API
+    with adaptive chunking, applies fuzzy matching for invalid personas, and
+    saves results to separate accepted and skipped files.
+
+    Args:
+        input_file_path: Path to the input CSV file containing prospect data
+            with Job Title column. Can be a CSV file or Hubspot zip file.
+    """
     load_env_or_fail()
     df = load_input_csv(input_file_path)
     df = filter_emails(df, "Email")
@@ -127,41 +141,61 @@ def main(input_file_path: str):
     for p in range(1, MAX_PASSES + 1):
         if not remaining_ids:
             break
-        print(f"\n===== PASS {p}/{MAX_PASSES} | remaining={len(remaining_ids)} | chunk={current_chunk} =====")
+        print(
+            f"\n===== PASS {p}/{MAX_PASSES} | remaining={len(remaining_ids)} | "
+            f"chunk={current_chunk} ====="
+        )
         df_pass = df[df["Prospect Id"].isin(remaining_ids)].copy()
         failed_ids = set()
 
         i = 0
-        with tqdm(total=len(df_pass)) as bar:
+        with tqdm(total=len(df_pass)) as progress_bar:
             while i < len(df_pass):
                 end_i = min(i + current_chunk, len(df_pass))
                 chunk = df_pass.iloc[i:end_i].copy()
                 # Sanitize job titles (remove commas to preserve CSV structure)
-                chunk.loc[:, "Job Title"] = chunk["Job Title"].apply(sanitize_job_title)
+                chunk.loc[:, "Job Title"] = chunk["Job Title"].apply(
+                    sanitize_job_title
+                )
 
                 # Calculate pacing to stay within token budget
                 est = estimate_tokens(len(chunk))
-                pace = max(BASE_SLEEP_SEC, est / max(1, TARGET_TPM_BUDGET) * 60.0)
+                pace = max(
+                    BASE_SLEEP_SEC,
+                    est / max(1, TARGET_TPM_BUDGET) * 60.0
+                )
 
                 # Format chunk as CSV-like table for LLM
-                job_titles_table = "\n".join([f"{r['Prospect Id']},{r['Job Title']}" for _, r in chunk.iterrows()])
+                job_titles_table = "\n".join([
+                    f"{r['Prospect Id']},{r['Job Title']}"
+                    for _, r in chunk.iterrows()
+                ])
                 try:
-                    resp, current_chunk = call_with_retries(session, job_titles_table, current_chunk)
+                    resp, current_chunk = call_with_retries(
+                        session, job_titles_table, current_chunk
+                    )
                     if resp:
                         all_results.append(resp)
-                except (TimeoutError, requests.HTTPError, requests.exceptions.RequestException, RuntimeError) as e:
+                except (
+                    TimeoutError, requests.HTTPError,
+                    requests.exceptions.RequestException, RuntimeError
+                ) as e:
                     failed_ids.update(chunk["Prospect Id"].tolist())
-                    # Print a clear message plus full traceback so the root cause is visible
+                    # Print a clear message plus full traceback so the root
+                    # cause is visible
                     print("\n===== ERROR DURING CHUNK PROCESSING =====")
                     print(f"Chunk index range: {i}:{end_i} (pass {p})")
-                    print(f"Prospect Ids in failing chunk: {chunk['Prospect Id'].tolist()}")
+                    print(
+                        f"Prospect Ids in failing chunk: "
+                        f"{chunk['Prospect Id'].tolist()}"
+                    )
                     print(f"Exception: {repr(e)}")
                     traceback.print_exc()
                     print("===== END ERROR =====\n")
 
                 # Pacing with jitter to avoid synchronized requests
                 time.sleep(pace + random.uniform(0, 0.75))
-                bar.update(end_i - i)
+                progress_bar.update(end_i - i)
                 i = end_i
 
         # Parse results and identify successfully processed prospects
@@ -170,7 +204,10 @@ def main(input_file_path: str):
         ok_ids = set()
         if not formatted.empty:
             formatted = formatted.drop_duplicates(subset=["Prospect Id"], keep="first")
-            ok_ids = set(formatted[formatted["Persona"].isin(VALID_PERSONAS)]["Prospect Id"].astype(str))
+            valid_personas_mask = formatted["Persona"].isin(VALID_PERSONAS)
+            ok_ids = set(
+                formatted[valid_personas_mask]["Prospect Id"].astype(str)
+            )
 
         # Update remaining IDs: remove successful ones, add failed ones
         before = len(remaining_ids)
@@ -248,7 +285,10 @@ def _resolve_input_path(arg_path: str | None) -> str:
     """
     if not arg_path:
         try:
-            arg_path = input("Input the absolute path of the input file with prospects and no persona: ").strip()
+            arg_path = input(
+                "Input the absolute path of the input file with prospects "
+                "and no persona: "
+            ).strip()
         except EOFError:
             print("No input received and --input not provided. Exiting.")
             sys.exit(1)
@@ -271,7 +311,10 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Streaming (adaptive) enrichment")
     # --input is now optional; we’ll prompt if missing
-    ap.add_argument("--input", required=False, help="Path to prospects CSV (if omitted, you will be prompted)")
+    ap.add_argument(
+        "--input", required=False,
+        help="Path to prospects CSV (if omitted, you will be prompted)"
+    )
     args = ap.parse_args()
 
     input_path = _resolve_input_path(args.input)

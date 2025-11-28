@@ -27,10 +27,16 @@ from io_utils import (
 from parsing import (
     sanitize_job_title, parse_batch_output_jsonl, fuzzy_match_invalid_personas
 )
-from batch_core import upload_file_for_batch, create_batch, poll_batch_until_done, download_file_content
+from batch_core import (
+    upload_file_for_batch, create_batch, poll_batch_until_done,
+    download_file_content
+)
 
 
-def build_requests_jsonl(df: pd.DataFrame, system_instructions: str, model: str, temperature: float = 0.0) -> bytes:
+def build_requests_jsonl(
+    df: pd.DataFrame, system_instructions: str, model: str,
+    temperature: float = 0.0
+) -> bytes:
     """Build a JSONL file for OpenAI Batch API from prospect data.
 
     Creates a JSONL file where each line is a batch API request for one prospect.
@@ -49,19 +55,31 @@ def build_requests_jsonl(df: pd.DataFrame, system_instructions: str, model: str,
     sys_msg = (
         system_instructions.strip()
         + "\n\nCRITICAL OUTPUT FORMAT: Respond with a SINGLE JSON object only.\n"
-        + 'Required keys: {"persona": <one of the defined personas>, "certainty": <0-100 integer or %>}.\n'
+        + 'Required keys: {"persona": <one of the defined personas>, '
+        + '"certainty": <0-100 integer or %>}.\n'
         + "Do not include extra keys, code fences, or commentary."
     )
     items = []
     for _, r in df.iterrows():
         pid = str(r["Prospect Id"])
         # Format user message with prospect ID and sanitized job title
-        user = f"Prospect Id: {pid}\nJob Title: {sanitize_job_title(r['Job Title'])}\n\nReturn ONLY the JSON."
+        user = (
+            f"Prospect Id: {pid}\n"
+            f"Job Title: {sanitize_job_title(r['Job Title'])}\n\n"
+            f"Return ONLY the JSON."
+        )
         items.append({
             "custom_id": pid,  # Use prospect ID as custom_id for tracking
             "method": "POST",
             "url": "/v1/chat/completions",
-            "body": {"model": model, "messages": [{"role":"system","content":sys_msg},{"role":"user","content":user}], "temperature": temperature}
+            "body": {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": sys_msg},
+                    {"role": "user", "content": user}
+                ],
+                "temperature": temperature
+            }
         })
     # Convert to JSONL format (one JSON object per line)
     return ("\n".join(json.dumps(x, ensure_ascii=False) for x in items)).encode("utf-8")
@@ -193,7 +211,10 @@ def _resolve_input_path(arg_path: str | None) -> str:
     """
     if not arg_path:
         try:
-            arg_path = input("Input the absolute path of the input file with prospects and no persona: ").strip()
+            arg_path = input(
+                "Input the absolute path of the input file with prospects "
+                "and no persona: "
+            ).strip()
         except EOFError:
             print("No input received and --input not provided. Exiting.")
             sys.exit(1)
@@ -215,7 +236,10 @@ if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Batch enrichment")
     # --input optional; prompt if not supplied
-    ap.add_argument("--input", required=False, help="Path to prospects CSV (if omitted, you will be prompted)")
+    ap.add_argument(
+        "--input", required=False,
+        help="Path to prospects CSV (if omitted, you will be prompted)"
+    )
     ap.add_argument("--resume-batch-id", default=None)
     ap.add_argument("--print-status", action="store_true")
     args = ap.parse_args()

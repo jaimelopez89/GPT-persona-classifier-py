@@ -14,7 +14,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def ask_gpt_v2(system_message: str | None = None, user_message: str | None = None, model: str = "gpt-4o-mini") -> str | None:
+def ask_gpt_v2(
+    system_message: str | None = None,
+    user_message: str | None = None,
+    model: str = "gpt-4o-mini"
+) -> str | None:
     """Call OpenAI Chat API with separate system and user messages.
 
     Calls the OpenAI Chat Completion API, allowing separate system and user messages

@@ -49,10 +49,16 @@ def ask_chat_session(session: dict, user_message: str, timeout: int = 120) -> st
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY not found")
     session["messages"].append({"role": "user", "content": user_message})
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
     data = {"model": session["model"], "messages": session["messages"]}
     try:
-        r = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data, timeout=timeout)
+        r = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers=headers, json=data, timeout=timeout
+        )
         if r.status_code == 200:
             txt = r.json()["choices"][0]["message"]["content"].strip()
             session["messages"].append({"role": "assistant", "content": txt})

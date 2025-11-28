@@ -20,7 +20,9 @@ import requests
 
 # ---------- File & Batch creation helpers ----------
 
-def upload_file_for_batch(api_key: str, jsonl_bytes: bytes, filename: str = "requests.jsonl") -> str:
+def upload_file_for_batch(
+    api_key: str, jsonl_bytes: bytes, filename: str = "requests.jsonl"
+) -> str:
     """Upload a JSONL file to OpenAI for use with the Batch API.
 
     Uploads a file containing batch requests (one JSON object per line) to
@@ -106,7 +108,9 @@ def retrieve_batch(api_key: str, batch_id: str) -> dict:
     return r.json()
 
 
-def download_file_content(api_key: str, file_id: str, *, stream: bool = False, timeout: int = 300) -> str:
+def download_file_content(
+    api_key: str, file_id: str, *, stream: bool = False, timeout: int = 300
+) -> str:
     """Download the content of a file from OpenAI.
 
     Downloads file content, with optional streaming for very large files.
@@ -246,7 +250,10 @@ def poll_batch_until_done(
                 print(json.dumps(meta, indent=2))
             else:
                 # Print concise progress summary
-                print(f"Batch {batch_id} status={status} | {completed}/{total} done | ETA {eta_txt}")
+                print(
+                    f"Batch {batch_id} status={status} | {completed}/{total} "
+                    f"done | ETA {eta_txt}"
+                )
 
             # Check if batch is in terminal state
             if status in ("completed", "failed", "cancelled", "canceled"):
