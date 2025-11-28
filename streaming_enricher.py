@@ -102,16 +102,20 @@ def call_with_retries(session: dict, payload_text: str, chunk_size: int) -> tupl
     raise last_err
 
 
-def main(input_file_path: str):
+def main(input_file_path: str, import_to_hubspot: bool = False):
     """Main entry point for streaming enrichment process.
 
     Loads prospect data, filters invalid entries, processes through LLM API
     with adaptive chunking, applies fuzzy matching for invalid personas, and
-    saves results to separate accepted and skipped files.
+    saves results to separate accepted and skipped files. Optionally imports
+    results back to Hubspot.
 
     Args:
         input_file_path: Path to the input CSV file containing prospect data
-            with Job Title column. Can be a CSV file or Hubspot zip file.
+            with Job Title column. Can be a CSV file, Hubspot zip file, or
+            Hubspot report ID (numeric string or prefixed with 'hubspot:').
+        import_to_hubspot: If True, imports accepted prospects to Hubspot
+            after processing (default: False).
     """
     load_env_or_fail()
     df = load_input_csv(input_file_path)
@@ -263,7 +267,9 @@ def main(input_file_path: str):
             skipped_df = still_skipped_df
 
     # Save outputs
-    accepted_path, skipped_path = save_outputs(final_df, skipped_df)
+    accepted_path, skipped_path = save_outputs(
+        final_df, skipped_df, import_to_hubspot=import_to_hubspot
+    )
     print("\n========= Processing Results =========")
     print(f"{len(final_df)} prospects updated")
     print(f"{len(skipped_df)} prospects skipped")
@@ -271,36 +277,50 @@ def main(input_file_path: str):
 
 
 def _resolve_input_path(arg_path: str | None) -> str:
-    """Resolve input file path from argument or user prompt, handling Hubspot zips.
+    """Resolve input file path from argument or user prompt.
 
+    Handles CSV files, Excel files, Hubspot zip files, or Hubspot report IDs.
     If arg_path is provided, use it. Otherwise, prompt the user in the terminal.
     Automatically handles Hubspot zip files by extracting and locating the CSV.
+    Supports Hubspot API pulls if input is a report ID or 'hubspot:ID'.
     Cleans quotes, expands ~, and validates existence.
 
     Args:
-        arg_path: Optional file path from command line argument.
+        arg_path: Optional file path or Hubspot report ID from command line.
 
     Returns:
-        Path to the CSV file to process (extracted from zip if needed).
+        Path to the CSV file to process (extracted from zip or pulled from API
+        if needed).
     """
     if not arg_path:
         try:
             arg_path = input(
                 "Input the absolute path of the input file with prospects "
-                "and no persona: "
+                "and no persona (or Hubspot report ID): "
             ).strip()
         except EOFError:
             print("No input received and --input not provided. Exiting.")
             sys.exit(1)
 
     arg_path = arg_path.strip().strip('"').strip("'")
+
+    # Check if it's a Hubspot report ID (numeric or 'hubspot:ID')
+    # If so, pass directly to resolve_input_file (no path expansion needed)
+    if arg_path.startswith("hubspot:") or arg_path.strip().isdigit():
+        try:
+            return resolve_input_file(arg_path)
+        except (FileNotFoundError, ValueError, RuntimeError) as e:
+            print(f"Error: {e}")
+            sys.exit(1)
+
+    # Otherwise, treat as file path
     arg_path = os.path.expanduser(arg_path)
 
     if not os.path.isabs(arg_path):
         # Allow relative paths by making them absolute
         arg_path = os.path.abspath(arg_path)
 
-    # Use resolve_input_file to handle both CSV and Hubspot zip files
+    # Use resolve_input_file to handle CSV, Excel, and Hubspot zip files
     try:
         return resolve_input_file(arg_path)
     except (FileNotFoundError, ValueError) as e:
@@ -310,12 +330,19 @@ def _resolve_input_path(arg_path: str | None) -> str:
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Streaming (adaptive) enrichment")
-    # --input is now optional; we’ll prompt if missing
+    # --input is now optional; we'll prompt if missing
     ap.add_argument(
         "--input", required=False,
-        help="Path to prospects CSV (if omitted, you will be prompted)"
+        help=(
+            "Path to prospects CSV, Hubspot zip file, or Hubspot report ID "
+            "(numeric or 'hubspot:ID'). If omitted, you will be prompted."
+        )
+    )
+    ap.add_argument(
+        "--hubspot-import", action="store_true",
+        help="Import accepted prospects back to Hubspot after processing"
     )
     args = ap.parse_args()
 
     input_path = _resolve_input_path(args.input)
-    main(input_path)
+    main(input_path, import_to_hubspot=args.hubspot_import)

@@ -5,7 +5,7 @@ This module provides functions for:
 - Reading and writing CSV and Excel files (XLS, XLSX)
 - Filtering and processing prospect data
 - Managing output directories and checkpoint files
-- Hubspot integration (zip extraction)
+- Hubspot integration (zip extraction and API)
 
 Author: Jaime López, 2025
 """
@@ -20,8 +20,16 @@ import tempfile
 import shutil
 from pathlib import Path
 import pandas as pd
+import requests
 from dotenv import load_dotenv
 from config import OUTPUT_DIR, SKIPPED_DIR, CHECKPOINTS_DIR
+
+# Optional Hubspot client import
+try:
+    from hubspot_client import pull_report_contacts, import_classified_contacts
+    HUBSPOT_AVAILABLE = True
+except ImportError:
+    HUBSPOT_AVAILABLE = False
 
 
 def load_env_or_fail() -> str:
@@ -201,22 +209,55 @@ def extract_hubspot_zip(zip_path: str) -> str:
         ) from e
 
 
-def resolve_input_file(input_path: str) -> str:
-    """Resolve input file path, handling CSV files, Excel files, Hubspot zip files.
+def resolve_input_file(input_path: str | None = None) -> str:
+    """Resolve input file path, handling CSV files, Excel files, Hubspot zip files,
+    or Hubspot API pulls.
 
+    If input_path starts with 'hubspot:' or is a report ID, pulls from Hubspot API.
     If the input is a zip file, it will be extracted and the contacts CSV
     will be located and returned. If it's a CSV or Excel file, it's returned as-is.
 
     Args:
-        input_path: Path to input file (CSV, XLS, XLSX, or zip).
+        input_path: Path to input file (CSV, XLS, XLSX, or zip), or Hubspot report
+            ID (numeric string or prefixed with 'hubspot:').
 
     Returns:
-        Path to the file to process (CSV, XLS, or XLSX).
+        Path to the file to process (CSV, XLS, or XLSX). If pulled from Hubspot API,
+        returns path to temporary CSV file.
 
     Raises:
         ValueError: If file format is not supported or expected files are missing.
         FileNotFoundError: If the input file doesn't exist.
+        RuntimeError: If Hubspot API is requested but not available or API key missing.
     """
+    # Check if it's a Hubspot API request
+    if input_path and (
+        input_path.startswith("hubspot:") or input_path.strip().isdigit()
+    ):
+        if not HUBSPOT_AVAILABLE:
+            raise RuntimeError(
+                "Hubspot integration not available. "
+                "hubspot_client module not found."
+            )
+
+        # Extract report ID
+        report_id = input_path.replace("hubspot:", "").strip()
+        if not report_id:
+            report_id = None
+
+        print(f"Pulling contacts from Hubspot API (report_id={report_id})...")
+        df = pull_report_contacts(report_id=report_id)
+
+        # Save to temporary CSV file
+        temp_path = tempfile.mktemp(suffix=".csv", prefix="hubspot_")
+        df.to_csv(temp_path, index=False)
+        print(f"Saved {len(df)} contacts to temporary file: {temp_path}")
+        return temp_path
+
+    # Handle file paths
+    if not input_path:
+        raise ValueError("input_path is required for file-based inputs")
+
     input_path = os.path.abspath(os.path.expanduser(input_path))
 
     if not os.path.exists(input_path):
@@ -243,8 +284,8 @@ def resolve_input_file(input_path: str) -> str:
 
     # Unknown file type
     raise ValueError(
-        f"Unsupported file type. Expected CSV, XLS, XLSX file or Hubspot zip "
-        f"file, got: {os.path.basename(input_path)}"
+        f"Unsupported file type. Expected CSV, XLS, XLSX file, Hubspot zip "
+        f"file, or Hubspot report ID, got: {os.path.basename(input_path)}"
     )
 
 
@@ -345,16 +386,23 @@ def load_input_csv(path: str) -> pd.DataFrame:
     return df
 
 
-def save_outputs(final_df: pd.DataFrame, skipped_df: pd.DataFrame) -> tuple[str, str]:
+def save_outputs(
+    final_df: pd.DataFrame,
+    skipped_df: pd.DataFrame,
+    import_to_hubspot: bool = False
+) -> tuple[str, str]:
     """Save accepted and skipped prospect DataFrames to CSV files.
 
     Creates timestamped filenames and saves to OUTPUT_DIR and SKIPPED_DIR.
     Ensures output directories exist before saving. Prospect IDs are saved
     with quoting to prevent Excel from converting them to scientific notation.
+    Optionally imports accepted prospects back to Hubspot.
 
     Args:
         final_df: DataFrame containing accepted prospects with valid personas.
         skipped_df: DataFrame containing skipped prospects with skip reasons.
+        import_to_hubspot: If True, imports final_df contacts to Hubspot after
+            saving (default: False).
 
     Returns:
         Tuple of (accepted_file_path, skipped_file_path) as strings.
@@ -380,6 +428,25 @@ def save_outputs(final_df: pd.DataFrame, skipped_df: pd.DataFrame) -> tuple[str,
     # This prevents Excel from auto-converting to scientific notation
     final_df.to_csv(accepted_path, index=False, quoting=csv.QUOTE_ALL)
     skipped_df.to_csv(skipped_path, index=False, quoting=csv.QUOTE_ALL)
+
+    # Import to Hubspot if requested
+    if import_to_hubspot:
+        if not HUBSPOT_AVAILABLE:
+            print(
+                "Warning: Hubspot integration not available. "
+                "Skipping Hubspot import."
+            )
+        elif not final_df.empty:
+            try:
+                results = import_classified_contacts(final_df)
+                if results["failed"] > 0:
+                    print(
+                        f"Warning: {results['failed']} contacts failed to import. "
+                        f"Check errors above for details."
+                    )
+            except (RuntimeError, ValueError, requests.HTTPError) as e:
+                print(f"Error importing to Hubspot: {e}")
+                print("CSV files saved successfully despite import error.")
 
     return str(accepted_path), str(skipped_path)
 
