@@ -232,7 +232,10 @@ def resolve_input_file(input_path: str | None = None) -> str:
     """
     # Check if it's a Hubspot API request
     if input_path and (
-        input_path.startswith("hubspot:") or input_path.strip().isdigit()
+        input_path.startswith("hubspot:") or
+        input_path.startswith("list:") or
+        input_path.startswith("segment:") or
+        input_path.strip().isdigit()
     ):
         if not HUBSPOT_AVAILABLE:
             raise RuntimeError(
@@ -240,13 +243,43 @@ def resolve_input_file(input_path: str | None = None) -> str:
                 "hubspot_client module not found."
             )
 
-        # Extract report ID
-        report_id = input_path.replace("hubspot:", "").strip()
-        if not report_id:
-            report_id = None
+        # Determine if it's a list/segment or report
+        is_list = (
+            input_path.startswith("list:") or
+            input_path.startswith("segment:")
+        )
+        
+        # Extract ID (remove prefixes)
+        identifier = input_path.replace("hubspot:", "").replace("list:", "").replace("segment:", "").strip()
+        
+        if not identifier:
+            raise ValueError(
+                "Hubspot list/segment ID or report ID is required. "
+                "Please provide an ID (e.g., '12345678', 'list:12345678', "
+                "'segment:12345678', or 'hubspot:12345678' for reports)."
+            )
 
-        print(f"Pulling contacts from Hubspot API (report_id={report_id})...")
-        df = pull_report_contacts(report_id=report_id)
+        if is_list:
+            # Pull from list/segment
+            print(f"Pulling contacts from Hubspot list/segment (list_id={identifier})...")
+            try:
+                from hubspot_client import pull_list_contacts
+                df = pull_list_contacts(list_id=identifier)
+            except (RuntimeError, ValueError) as e:
+                raise RuntimeError(
+                    f"Failed to pull contacts from Hubspot list/segment "
+                    f"'{identifier}': {e}"
+                ) from e
+        else:
+            # Pull from report (legacy support)
+            print(f"Pulling contacts from Hubspot report (report_id={identifier})...")
+            try:
+                df = pull_report_contacts(report_id=identifier)
+            except (RuntimeError, ValueError) as e:
+                raise RuntimeError(
+                    f"Failed to pull contacts from Hubspot report "
+                    f"'{identifier}': {e}"
+                ) from e
 
         # Save to temporary CSV file
         temp_path = tempfile.mktemp(suffix=".csv", prefix="hubspot_")
@@ -449,6 +482,79 @@ def save_outputs(
                 print("CSV files saved successfully despite import error.")
 
     return str(accepted_path), str(skipped_path)
+
+
+def prompt_and_import_to_hubspot(final_df: pd.DataFrame) -> bool:
+    """Prompt user to import results to Hubspot and perform import if confirmed.
+
+    Asks the user if they want to import the classified contacts to Hubspot.
+    If confirmed, imports the contacts using the Hubspot API.
+
+    Args:
+        final_df: DataFrame containing accepted prospects with valid personas.
+            Must have columns: Prospect Id, Persona, Persona Certainty.
+
+    Returns:
+        True if import was successful or user declined, False if import failed.
+    """
+    if not HUBSPOT_AVAILABLE:
+        return True  # Not available, nothing to do
+
+    if final_df.empty:
+        return True  # No contacts to import
+
+    # Check if required columns exist (now requires Email, not Prospect Id)
+    if "Email" not in final_df.columns or "Persona" not in final_df.columns:
+        print(
+            "Warning: Cannot import to Hubspot - missing required columns "
+            "(Email, Persona)."
+        )
+        return True
+
+    print("\n" + "=" * 50)
+    print("Hubspot Import Option")
+    print("=" * 50)
+    print(f"You have {len(final_df)} classified contacts ready to import.")
+    print(
+        "Would you like to update these contacts in Hubspot with their "
+        "persona classifications?"
+    )
+    print("\nThis will update the following properties:")
+    print("  - hs_persona")
+    print("  - persona_certainty (if available)")
+
+    while True:
+        try:
+            response = input("\nImport to Hubspot? (y/n): ").strip().lower()
+            if response in ('y', 'yes'):
+                print("\nImporting to Hubspot...")
+                try:
+                    results = import_classified_contacts(final_df)
+                    print("\n" + "=" * 50)
+                    print("Hubspot Import Complete")
+                    print("=" * 50)
+                    print(f"Successfully updated: {results['successful']}")
+                    print(f"Failed: {results['failed']}")
+                    print(f"Total: {results['total']}")
+                    if results['errors']:
+                        print(f"\nErrors ({len(results['errors'])}):")
+                        for error in results['errors'][:5]:
+                            print(f"  - {error}")
+                        if len(results['errors']) > 5:
+                            print(f"  ... and {len(results['errors']) - 5} more")
+                    return True
+                except (RuntimeError, ValueError, requests.HTTPError) as e:
+                    print(f"\nError importing to Hubspot: {e}")
+                    print("CSV files were saved successfully.")
+                    return False
+            elif response in ('n', 'no'):
+                print("Skipping Hubspot import.")
+                return True
+            else:
+                print("Please enter 'y' or 'n'.")
+        except (EOFError, KeyboardInterrupt):
+            print("\nSkipping Hubspot import.")
+            return True
 
 
 def save_checkpoint_raw(name: str, content: str | dict) -> str:

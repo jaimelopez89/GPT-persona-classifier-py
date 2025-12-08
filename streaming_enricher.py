@@ -31,7 +31,7 @@ from config import (
 )
 from io_utils import (
     load_env_or_fail, load_input_csv, filter_emails, read_text, save_outputs,
-    resolve_input_file
+    resolve_input_file, prompt_and_import_to_hubspot
 )
 from parsing import (
     sanitize_job_title, parse_llm_csv, determine_skip_reason,
@@ -275,6 +275,10 @@ def main(input_file_path: str, import_to_hubspot: bool = False):
     print(f"{len(skipped_df)} prospects skipped")
     print(f"\nAccepted: {accepted_path}\nSkipped:  {skipped_path}")
 
+    # Prompt for Hubspot import if not already done via flag
+    if not import_to_hubspot:
+        prompt_and_import_to_hubspot(final_df)
+
 
 def _resolve_input_path(arg_path: str | None) -> str:
     """Resolve input file path from argument or user prompt.
@@ -296,7 +300,7 @@ def _resolve_input_path(arg_path: str | None) -> str:
         try:
             arg_path = input(
                 "Input the absolute path of the input file with prospects "
-                "and no persona (or Hubspot report ID): "
+                "and no persona (or Hubspot list/segment ID, e.g., 'list:123'): "
             ).strip()
         except EOFError:
             print("No input received and --input not provided. Exiting.")
@@ -304,9 +308,14 @@ def _resolve_input_path(arg_path: str | None) -> str:
 
     arg_path = arg_path.strip().strip('"').strip("'")
 
-    # Check if it's a Hubspot report ID (numeric or 'hubspot:ID')
+    # Check if it's a Hubspot list/segment/report ID
     # If so, pass directly to resolve_input_file (no path expansion needed)
-    if arg_path.startswith("hubspot:") or arg_path.strip().isdigit():
+    if (
+        arg_path.startswith("hubspot:") or
+        arg_path.startswith("list:") or
+        arg_path.startswith("segment:") or
+        arg_path.strip().isdigit()
+    ):
         try:
             return resolve_input_file(arg_path)
         except (FileNotFoundError, ValueError, RuntimeError) as e:
@@ -334,8 +343,9 @@ if __name__ == "__main__":
     ap.add_argument(
         "--input", required=False,
         help=(
-            "Path to prospects CSV, Hubspot zip file, or Hubspot report ID "
-            "(numeric or 'hubspot:ID'). If omitted, you will be prompted."
+            "Path to prospects CSV, Hubspot zip file, or Hubspot list/segment ID "
+            "(e.g., 'list:123', 'segment:123', or numeric for legacy report ID). "
+            "If omitted, you will be prompted."
         )
     )
     ap.add_argument(

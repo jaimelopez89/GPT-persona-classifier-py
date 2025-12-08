@@ -1,0 +1,16 @@
+{
+  "persona_mapping": {
+    "Application Developer": "persona_1",
+    "Executive Sponsor": "persona_2",
+    "Economic Buyer": "persona_3",
+    "Data Product Manager/Owner": "persona_4",
+    "Data User": "persona_5",
+    "Real-time Specialist": "persona_6",
+    "Real-Time Specialist": "persona_6",
+    "Operator/Systems Administrator": "persona_7",
+    "Technical Decision Maker": "persona_8",
+    "Not a target": "persona_9"
+  },
+  "_comment": "This file maps persona names (as used in the tool) to Hubspot enum values (internal API names). Update this file if Hubspot persona values change. Note: Both 'Real-time Specialist' and 'Real-Time Specialist' are mapped to handle case variations."
+}
+
