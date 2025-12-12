@@ -1,0 +1,4 @@
+[MESSAGES CONTROL]
+# Disable trailing whitespace related warnings
+disable=trailing-whitespace,trailing-newlines
+

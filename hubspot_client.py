@@ -9,7 +9,6 @@ Author: Jaime López, 2025
 
 import os
 import json
-import time
 from pathlib import Path
 from typing import Optional
 import pandas as pd
@@ -23,27 +22,39 @@ PERSONA_MAPPING_FILE = Path(__file__).parent / "hubspot_persona_mapping.json"
 
 
 def get_hubspot_api_key() -> Optional[str]:
-    """Get Hubspot API key from environment variables.
+    """Get Hubspot API key from environment variables (for read operations).
 
     Returns:
-        Hubspot API key if set, None otherwise.
+        API key string if found, None otherwise.
     """
     return os.getenv("HUBSPOT_API_KEY")
 
 
+def get_hubspot_write_token() -> Optional[str]:
+    """Get Hubspot write API key from environment variables (for write operations).
+
+    This key is used for importing/updating contacts in Hubspot.
+    Uses HUBSPOT_WRITE_API_KEY from environment variables.
+
+    Returns:
+        Write API key string if found, None otherwise.
+    """
+    return os.getenv("HUBSPOT_WRITE_API_KEY")
+
+
 def _load_persona_mapping() -> dict[str, str]:
-    """Load persona name to Hubspot enum mapping from external JSON file.
+    """Load persona name to Hubspot enum mapping from JSON file.
 
     Returns:
         Dictionary mapping persona names to Hubspot enum values.
 
     Raises:
-        RuntimeError: If mapping file cannot be loaded or is invalid.
+        RuntimeError: If the mapping file cannot be loaded or parsed.
     """
     if not PERSONA_MAPPING_FILE.exists():
         raise RuntimeError(
             f"Persona mapping file not found: {PERSONA_MAPPING_FILE}. "
-            "Please create this file with the correct persona mappings."
+            "Please create this file with the persona name to enum mapping."
         )
 
     try:
@@ -51,7 +62,9 @@ def _load_persona_mapping() -> dict[str, str]:
             data = json.load(f)
             mapping = data.get("persona_mapping", {})
             if not mapping:
-                raise ValueError("persona_mapping is empty or missing")
+                raise RuntimeError(
+                    f"No 'persona_mapping' key found in {PERSONA_MAPPING_FILE}"
+                )
             return mapping
     except json.JSONDecodeError as e:
         raise RuntimeError(
@@ -77,10 +90,6 @@ def map_persona_to_hubspot_enum(persona: str) -> str:
         Hubspot enum value (e.g., "persona_1"). If no mapping is found,
         returns the original persona name (which will likely cause an error
         in Hubspot, but allows the user to see what went wrong).
-
-    Note:
-        This mapping is only used when uploading to Hubspot via API.
-        Human-readable output files still use the original persona names.
     """
     persona_clean = str(persona).strip()
     
@@ -104,13 +113,50 @@ def map_persona_to_hubspot_enum(persona: str) -> str:
         ) from e
 
 
+def _verify_list_exists(list_id: str, headers: dict) -> dict:
+    """Verify that a list exists and return its metadata.
+    
+    Args:
+        list_id: Hubspot list/segment ID.
+        headers: Request headers including Authorization.
+        
+    Returns:
+        Dictionary with list metadata if found.
+        
+    Raises:
+        RuntimeError: If list is not found or not accessible.
+    """
+    # Try to get list metadata
+    list_url = f"https://api.hubapi.com/contacts/v1/lists/{list_id}"
+    
+    try:
+        response = requests.get(list_url, headers=headers, timeout=120)
+        response.raise_for_status()
+        return response.json()
+    except requests.HTTPError as e:
+        status_code = e.response.status_code if e.response else "unknown"
+        if status_code == 404:
+            raise RuntimeError(
+                f"List/segment '{list_id}' not found. "
+                f"Please verify the list ID is correct."
+            ) from e
+        elif status_code == 403:
+            raise RuntimeError(
+                f"Access denied to list/segment '{list_id}'. "
+                f"Your API key may not have permission to access this list."
+            ) from e
+        else:
+            # For other errors, just log and continue
+            print(f"Warning: Could not verify list metadata: HTTP {status_code}")
+            return {}
+
+
 def pull_list_contacts(
     list_id: str, limit: int = 10000
 ) -> pd.DataFrame:
     """Pull contacts from a Hubspot list (segment).
 
-    Fetches contacts from the specified Hubspot list/segment using the Lists API.
-    Handles pagination automatically.
+    First gets contact IDs from the list, then fetches contact details.
 
     Args:
         list_id: Hubspot list/segment ID (required). Must be a valid list ID
@@ -118,8 +164,7 @@ def pull_list_contacts(
         limit: Maximum number of contacts to fetch (default: 10000).
 
     Returns:
-        DataFrame with columns: Prospect Id, Email, Job Title, First Name,
-        Last Name, Company.
+        DataFrame with columns: Prospect Id, Email, Job Title, Company.
 
     Raises:
         ValueError: If list_id is None or empty.
@@ -147,56 +192,59 @@ def pull_list_contacts(
         "Content-Type": "application/json"
     }
 
-    # Properties to fetch from Hubspot
-    properties = [
-        "email", "jobtitle", "firstname", "lastname", "hs_object_id", "company"
-    ]
-
-    # Use Lists API v1 to fetch contacts
-    # Endpoint: GET /contacts/v1/lists/{list_id}/contacts/all
-    url = f"https://api.hubapi.com/contacts/v1/lists/{list_id}/contacts/all"
+    # Properties to fetch from Hubspot (only what we need)
+    properties = ["email", "jobtitle", "company", "hs_object_id"]
     
     print(f"Fetching contacts from Hubspot list/segment ID: {list_id}...")
-
-    all_contacts = []
-    vid_offset = None
-    fetched = 0
-
-    while fetched < limit:
-        # Lists API v1 uses property parameter as comma-separated string
-        params = {
-            "property": ",".join(properties),
-            "count": min(100, limit - fetched)  # Hubspot default is 20, max is 100
-        }
+    
+    # First, verify the list exists and get metadata
+    try:
+        list_metadata = _verify_list_exists(list_id, headers)
+        if list_metadata:
+            list_name = list_metadata.get("name", "Unknown")
+            list_size = list_metadata.get("metaData", {}).get("size", "Unknown")
+            print(f"List found: '{list_name}' (size: {list_size})")
+    except RuntimeError as e:
+        print(f"Warning: {e}")
+        # Continue anyway - the list might exist but metadata endpoint might not work
+    
+    # Step 1: Get contact IDs from list memberships using v3 API
+    print("Fetching contact IDs from list memberships...")
+    memberships_url = f"https://api.hubapi.com/crm/v3/lists/{list_id}/memberships"
+    
+    contact_ids = []
+    after = None
+    
+    while len(contact_ids) < limit:
+        params = {"limit": min(100, limit - len(contact_ids))}
+        if after:
+            params["after"] = after
         
-        if vid_offset:
-            params["vidOffset"] = vid_offset
-
         try:
             response = requests.get(
-                url, headers=headers, params=params, timeout=120
+                memberships_url, headers=headers, params=params, timeout=120
             )
             response.raise_for_status()
             data = response.json()
-
-            contacts = data.get("contacts", [])
-            if not contacts:
+            
+            results = data.get("results", [])
+            if not results:
                 break
-
-            all_contacts.extend(contacts)
-            fetched += len(contacts)
-
-            print(f"Fetched {fetched} contacts...")
-
-            # Check if there are more contacts
-            has_more = data.get("has-more", False)
-            if not has_more:
+            
+            # Extract contact IDs from memberships
+            for result in results:
+                contact_id = result.get("contactId") or result.get("recordId")
+                if contact_id:
+                    contact_ids.append(str(contact_id))
+            
+            print(f"Found {len(contact_ids)} contact IDs in list...")
+            
+            # Check pagination
+            paging = data.get("paging", {})
+            after = paging.get("next", {}).get("after")
+            if not after:
                 break
-
-            vid_offset = data.get("vid-offset")
-            if not vid_offset:
-                break
-
+                
         except requests.HTTPError as e:
             error_detail = ""
             if e.response is not None:
@@ -207,9 +255,9 @@ def pull_list_contacts(
                         error_detail = str(error_json)
                 except (ValueError, KeyError):
                     error_detail = e.response.text[:200]
-
+            
             status_code = e.response.status_code if e.response else "unknown"
-
+            
             if status_code == 404:
                 raise RuntimeError(
                     f"Hubspot list/segment not found: List ID '{list_id}' does not exist "
@@ -227,49 +275,137 @@ def pull_list_contacts(
                 ) from e
             else:
                 raise RuntimeError(
-                    f"Failed to fetch contacts from Hubspot list '{list_id}': "
+                    f"Failed to fetch list memberships from Hubspot list '{list_id}': "
                     f"HTTP {status_code}. {error_detail}"
                 ) from e
+    
+    if not contact_ids:
+        print(f"Warning: No contacts found in list/segment '{list_id}'.")
+        expected_columns = ["Prospect Id", "Email", "Job Title", "Company"]
+        return pd.DataFrame(columns=expected_columns)
+    
+    # Step 2: Batch fetch contact details using v3 batch read API
+    print(f"Fetching details for {len(contact_ids)} contacts...")
+    batch_read_url = "https://api.hubapi.com/crm/v3/objects/contacts/batch/read"
+    
+    all_contacts = []
+    batch_size = 100  # Hubspot allows up to 100 IDs per batch
+    
+    for i in range(0, len(contact_ids), batch_size):
+        batch_ids = contact_ids[i:i + batch_size]
+        batch_payload = {
+            "properties": properties,
+            "propertiesWithHistory": [],
+            "idProperty": "hs_object_id",
+            "inputs": [{"id": cid} for cid in batch_ids]
+        }
+        
+        try:
+            response = requests.post(
+                batch_read_url, headers=headers, json=batch_payload, timeout=120
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            results = data.get("results", [])
+            
+            # Debug: Show first contact structure
+            # if i == 0 and results:
+            #     print(f"DEBUG: First contact structure: {list(results[0].keys())}")
+            #     print(f"DEBUG: First contact properties: {list(results[0].get('properties', {}).keys())}")
+            
+            for result in results:
+                props = result.get("properties", {})
+                # v3 batch read returns id in the result, and hs_object_id in properties
+                contact_id = result.get("id", "") or props.get("hs_object_id", "")
+                contact = {
+                    "vid": contact_id,
+                    "canonical-vid": contact_id,
+                    "properties": props
+                }
+                all_contacts.append(contact)
+            
+            print(f"Fetched details for {len(all_contacts)} contacts...")
+            
+            # Debug: Save first 5 contacts immediately after first batch
+            # if i == 0 and all_contacts:
+            #     debug_contacts = []
+            #     for j, contact in enumerate(all_contacts[:5], 1):
+            #         props = contact.get("properties", {})
+            #         # Prioritize hs_object_id from properties, then vid
+            #         contact_id = props.get("hs_object_id", "") or contact.get("vid", "") or contact.get("canonical-vid", "N/A")
+            #         
+            #         # v3 API returns properties as simple key-value pairs
+            #         email = props.get("email", "")
+            #         jobtitle = props.get("jobtitle", "")
+            #         company = props.get("company", "")
+            #         
+            #         debug_contact = {
+            #             "Contact Number": j,
+            #             "Contact ID": str(contact_id),
+            #             "Email": email,
+            #             "Job Title": jobtitle,
+            #             "Company": company
+            #         }
+            #         debug_contacts.append(debug_contact)
+            #     
+            #     debug_file = os.path.join(
+            #         os.getcwd(), f"hubspot_debug_contacts_{list_id}.csv"
+            #     )
+            #     debug_df = pd.DataFrame(debug_contacts)
+            #     debug_df.to_csv(debug_file, index=False)
+            #     print(f"\n=== DEBUG: First 5 contacts saved to: {debug_file} ===")
+                
+        except requests.HTTPError as e:
+            error_detail = ""
+            if e.response is not None:
+                try:
+                    error_json = e.response.json()
+                    error_detail = error_json.get("message", "")
+                    if not error_detail:
+                        error_detail = str(error_json)
+                except (ValueError, KeyError):
+                    error_detail = e.response.text[:200]
+            
+            status_code = e.response.status_code if e.response else "unknown"
+            print(
+                f"Warning: Failed to fetch batch {i//batch_size + 1}: "
+                f"HTTP {status_code}. {error_detail}. Continuing..."
+            )
+            # Continue with next batch even if one fails
 
-    # Convert to DataFrame
-    # Hubspot Lists API v1 returns properties in format: {"property": {"value": "..."}}
+    # Convert to DataFrame - v3 API returns properties as simple key-value pairs
     rows = []
     for contact in all_contacts:
         props = contact.get("properties", {})
-        vid = contact.get("vid") or contact.get("canonical-vid", "")
-        
-        # Helper to extract property value (handles both v1 and v3 formats)
-        def get_prop_value(prop_name: str) -> str:
-            prop = props.get(prop_name, {})
-            if isinstance(prop, dict) and "value" in prop:
-                return str(prop.get("value", ""))
-            elif isinstance(prop, str):
-                return prop
-            else:
-                return ""
+        # Use hs_object_id if available, otherwise fall back to vid
+        contact_id = props.get("hs_object_id", "") or contact.get("vid", "") or contact.get("canonical-vid", "")
 
-        email = get_prop_value("email")
-        jobtitle = get_prop_value("jobtitle")
-        firstname = get_prop_value("firstname")
-        lastname = get_prop_value("lastname")
-        company = get_prop_value("company")
+        email = props.get("email", "")
+        jobtitle = props.get("jobtitle", "")
+        company = props.get("company", "")
 
         rows.append({
-            "Prospect Id": str(vid),
-            "Email": email,
-            "Job Title": jobtitle,
-            "First Name": firstname,
-            "Last Name": lastname,
-            "Company": company
+            "Prospect Id": str(contact_id),
+            "Email": email if email else "",
+            "Job Title": jobtitle if jobtitle else "",
+            "Company": company if company else ""
         })
 
-    df = pd.DataFrame(rows)
-    if len(df) == 0:
+    # Always create DataFrame with expected columns, even if empty
+    expected_columns = ["Prospect Id", "Email", "Job Title", "Company"]
+    if not rows:
+        df = pd.DataFrame(columns=expected_columns)
         print(
             f"Warning: No contacts found for list/segment '{list_id}'. "
             "The list may be empty or the filters may not match any contacts."
         )
     else:
+        df = pd.DataFrame(rows)
+        # Ensure all expected columns exist
+        for col in expected_columns:
+            if col not in df.columns:
+                df[col] = ""
         print(f"Successfully fetched {len(df)} contacts from Hubspot list/segment")
     return df
 
@@ -461,27 +597,23 @@ def pull_report_contacts(
             if not results:
                 break
 
-            all_contacts.extend(results)
-            fetched += len(results)
+            for result in results:
+                contact = {
+                    "vid": result.get("id", ""),
+                    "canonical-vid": result.get("id", ""),
+                    "properties": result.get("properties", {})
+                }
+                all_contacts.append(contact)
 
+            fetched += len(results)
             print(f"Fetched {fetched} contacts...")
 
-            paging = data.get("paging")
-            if not paging or not paging.get("next"):
-                break
-            after = paging["next"].get("after")
+            paging = data.get("paging", {})
+            after = paging.get("next", {}).get("after")
             if not after:
                 break
 
         except requests.HTTPError as e:
-            if e.response.status_code == 429:
-                # Rate limited - wait and retry
-                retry_after = int(e.response.headers.get("Retry-After", 10))
-                print(f"Rate limited. Waiting {retry_after} seconds...")
-                time.sleep(retry_after)
-                continue
-
-            # Provide detailed error for contact search failures
             error_detail = ""
             if e.response is not None:
                 try:
@@ -494,7 +626,7 @@ def pull_report_contacts(
 
             status_code = e.response.status_code if e.response else "unknown"
             raise RuntimeError(
-                f"Failed to fetch contacts for report '{report_id}': "
+                f"Failed to fetch contacts from Hubspot report '{report_id}': "
                 f"HTTP {status_code}. {error_detail}"
             ) from e
 
@@ -523,276 +655,312 @@ def pull_report_contacts(
 
 
 def _lookup_contact_ids_by_emails(
-    emails: list[str], headers: dict
+    api_key: str, emails: list[str], headers: dict
 ) -> dict[str, str]:
     """Look up Hubspot contact IDs by email addresses.
 
     Uses the Contacts Search API to find contacts by email.
 
     Args:
+        api_key: Hubspot API key.
         emails: List of email addresses to look up.
-        headers: HTTP headers for API requests.
+        headers: Request headers including Authorization.
 
     Returns:
-        Dictionary mapping email (lowercase) -> contact_id.
+        Dictionary mapping email addresses to Hubspot contact IDs.
     """
     email_to_id = {}
     url = "https://api.hubapi.com/crm/v3/objects/contacts/search"
     
-    # Process emails in batches (Hubspot allows up to 100 OR filters per request)
-    # We'll use IN operator to search for multiple emails at once
-    batch_size = 100
+    # Hubspot search API: multiple filters in one filterGroup = AND logic
+    # To search for multiple emails (OR logic), we need separate filterGroups
+    # However, Hubspot limits filterGroups, so we'll do individual searches
+    # which is more reliable and simpler
     
-    for i in range(0, len(emails), batch_size):
-        email_batch = emails[i:i + batch_size]
+    print(f"Looking up {len(emails)} contacts by email (this may take a moment)...")
+    for idx, email in enumerate(emails, 1):
+        if idx % 50 == 0:
+            print(f"  Processed {idx}/{len(emails)} emails...")
         
-        # Build filter with IN operator for multiple emails
-        search_payload = {
-            "filterGroups": [{
-                "filters": [{
-                    "propertyName": "email",
-                    "operator": "IN",
-                    "values": email_batch
-                }]
-            }],
-            "properties": ["hs_object_id", "email"],
-            "limit": len(email_batch)
-        }
-
         try:
-            response = requests.post(
+            search_payload = {
+                "filterGroups": [{
+                    "filters": [{
+                        "propertyName": "email",
+                        "operator": "EQ",
+                        "value": email
+                    }]
+                }],
+                "properties": ["hs_object_id", "email"],
+                "limit": 1
+            }
+            
+            search_response = requests.post(
                 url, headers=headers, json=search_payload, timeout=120
             )
-            response.raise_for_status()
-            data = response.json()
+            search_response.raise_for_status()
+            search_data = search_response.json()
+            results = search_data.get("results", [])
             
-            for result in data.get("results", []):
-                props = result.get("properties", {})
-                email_addr = props.get("email", "").strip().lower()
+            if results:
+                props = results[0].get("properties", {})
                 contact_id = props.get("hs_object_id", "")
-                if email_addr and contact_id:
-                    email_to_id[email_addr] = str(contact_id)
-                    
+                found_email = props.get("email", "")
+                if contact_id:
+                    # Use the email from the response to handle case sensitivity
+                    email_to_id[found_email.lower()] = str(contact_id)
+                    # Also map the original email (case-insensitive lookup)
+                    if found_email.lower() != email.lower():
+                        email_to_id[email.lower()] = str(contact_id)
         except requests.HTTPError as e:
-            # If batch search fails, try individual lookups
-            if e.response and e.response.status_code == 400:
-                # IN operator might not be supported, fall back to individual
-                print("Batch lookup not supported, using individual lookups...")
-                for email in email_batch:
-                    try:
-                        individual_payload = {
-                            "filterGroups": [{
-                                "filters": [{
-                                    "propertyName": "email",
-                                    "operator": "EQ",
-                                    "value": email
-                                }]
-                            }],
-                            "properties": ["hs_object_id", "email"],
-                            "limit": 1
-                        }
-                        individual_response = requests.post(
-                            url, headers=headers, json=individual_payload, timeout=120
-                        )
-                        individual_response.raise_for_status()
-                        individual_data = individual_response.json()
-                        results = individual_data.get("results", [])
-                        if results:
-                            props = results[0].get("properties", {})
-                            contact_id = props.get("hs_object_id", "")
-                            if contact_id:
-                                email_to_id[email] = str(contact_id)
-                    except (requests.HTTPError, requests.RequestException, KeyError, ValueError):
-                        continue
-            else:
-                # Other errors, log and continue
-                print(f"Warning: Error looking up emails: {e}")
+            # Log but continue - some emails might not exist
+            if e.response and e.response.status_code != 404:
+                # Only log non-404 errors (404 means contact not found, which is OK)
+                error_detail = ""
+                try:
+                    error_json = e.response.json()
+                    error_detail = error_json.get("message", str(error_json)[:100])
+                except (ValueError, KeyError):
+                    error_detail = e.response.text[:100] if e.response else ""
+                print(f"  Warning: Failed to lookup email {email}: {error_detail}")
+            continue
+        except Exception as e:
+            # Skip any other errors and continue
+            continue
 
     return email_to_id
 
 
 def import_classified_contacts(
     df: pd.DataFrame,
-    update_existing: bool = True,
-    batch_size: int = 100
-) -> dict:
-    """Import persona classifications back into Hubspot contacts.
+    persona_property: str = "hs_persona",
+    certainty_property: str = "persona_certainty",
+) -> dict[str, int]:
+    """Import classified personas back into Hubspot.
 
-    Updates contact properties with Persona and Persona Certainty values.
-    Matches contacts by email address (not Prospect ID).
-    Uses Hubspot's batch update API for efficiency.
+    Takes a DataFrame with classified personas and updates the corresponding
+    Hubspot contacts. Matches contacts by email address.
 
     Args:
         df: DataFrame with columns: Email, Persona, Persona Certainty.
-            Prospect Id and Skip Reason columns are ignored.
-        update_existing: Reserved for future use. Currently always updates
-            existing contacts (default: True).
-        batch_size: Number of contacts to update per batch (max 100,
-            default: 100).
+            May also contain Prospect Id and Skip Reason, which will be ignored.
+        persona_property: Hubspot property name for persona (default: "hs_persona").
+        certainty_property: Hubspot property name for certainty (default: "persona_certainty").
 
     Returns:
-        Dictionary with import statistics:
-        - successful: Number of successfully updated contacts
-        - failed: Number of failed updates
-        - total: Total number of contacts attempted
-        - errors: List of error messages (if any)
+        Dictionary with keys: "success", "failed", "not_found" indicating
+        counts of contacts updated, failed, and not found respectively.
 
     Raises:
-        RuntimeError: If HUBSPOT_API_KEY is not set.
-        ValueError: If required columns are missing from df.
+        RuntimeError: If HUBSPOT_API_KEY is not set, or if required columns
+            are missing from the DataFrame.
+        ValueError: If DataFrame is empty or missing required columns.
     """
-    # update_existing is reserved for future use (e.g., create vs update endpoints)
-    _ = update_existing  # Suppress unused argument warning
-
-    api_key = get_hubspot_api_key()
-    if not api_key:
-        raise RuntimeError(
-            "HUBSPOT_API_KEY not set. Please set it in your .env file or "
-            "environment variables."
-        )
-
-    # Validate required columns - now requires Email instead of Prospect Id
-    required_cols = ["Email", "Persona"]
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    if missing_cols:
-        raise ValueError(
-            f"Missing required columns: {missing_cols}. "
-            f"Available columns: {list(df.columns)}"
-        )
-
-    # Filter out rows with empty emails
-    df = df[df["Email"].notna() & (df["Email"].astype(str).str.strip() != "")]
     if df.empty:
-        print("Warning: No contacts with valid email addresses to import.")
-        return {"successful": 0, "failed": 0, "total": 0, "errors": []}
+        raise ValueError("DataFrame is empty. Nothing to import.")
 
-    # Default property names (can be customized in Hubspot)
-    persona_property = "hs_persona"
-    certainty_property = "persona_certainty"
+    required_columns = ["Email", "Persona"]
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        raise ValueError(
+            f"DataFrame missing required columns: {missing_columns}. "
+            f"Required: {required_columns}"
+        )
 
-    url = "https://api.hubapi.com/crm/v3/objects/contacts/batch/update"
+    # Use write API key for import/update operations
+    write_token = get_hubspot_write_token()
+    if not write_token:
+        raise RuntimeError(
+            "HUBSPOT_WRITE_API_KEY not set. Please set it in your .env file or "
+            "environment variables. This key is required for importing/updating contacts."
+        )
+
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": f"Bearer {write_token}",
         "Content-Type": "application/json"
     }
 
-    # First, look up contact IDs by email
-    print(f"\nLooking up {len(df)} contacts by email address...")
-    emails = df["Email"].astype(str).str.strip().str.lower().unique().tolist()
-    email_to_id = _lookup_contact_ids_by_emails(emails, headers)
-    
-    if not email_to_id:
-        raise RuntimeError(
-            "No contacts found in Hubspot matching the provided email addresses. "
-            "Please verify the emails are correct and the contacts exist in Hubspot."
-        )
-    
-    print(f"Found {len(email_to_id)} matching contacts in Hubspot.")
-
-    # Filter df to only include contacts we found
-    df["Email_lower"] = df["Email"].astype(str).str.strip().str.lower()
-    df = df[df["Email_lower"].isin(email_to_id.keys())]
-    
-    if df.empty:
-        raise RuntimeError(
-            "No matching contacts found after email lookup. "
-            "Please verify the email addresses are correct."
+    # Filter out rows with missing emails or personas
+    df_clean = df[df["Email"].notna() & df["Persona"].notna()].copy()
+    if df_clean.empty:
+        raise ValueError(
+            "No valid contacts to import. All contacts are missing Email or Persona."
         )
 
-    successful = 0
-    failed = 0
-    errors = []
+    # Prepare batch update payloads
+    # Hubspot allows up to 100 contacts per batch for bulk updates
+    batch_size = 100
+    all_inputs = []
+    
+    # Check if we have Prospect Id column - if so, use it directly
+    has_prospect_id = "Prospect Id" in df_clean.columns
+    
+    # Separate contacts with IDs from those needing email lookup
+    contacts_with_id = []
+    contacts_needing_lookup = []
+    
+    for _, row in df_clean.iterrows():
+        prospect_id = None
+        if has_prospect_id:
+            prospect_id_val = row.get("Prospect Id")
+            if pd.notna(prospect_id_val) and str(prospect_id_val).strip():
+                prospect_id = str(prospect_id_val).strip()
+        
+        if prospect_id:
+            contacts_with_id.append((prospect_id, row))
+        else:
+            contacts_needing_lookup.append(row)
+    
+    print(f"Found {len(contacts_with_id)} contacts with existing IDs")
+    print(f"Need to lookup {len(contacts_needing_lookup)} contacts by email")
+    
+    # Look up contact IDs by email for contacts that don't have IDs
+    # Use read API key for lookups (read operation)
+    read_api_key = get_hubspot_api_key()
+    if not read_api_key:
+        raise RuntimeError(
+            "HUBSPOT_API_KEY not set. Please set it in your .env file or "
+            "environment variables. This key is required for looking up contacts."
+        )
+    
+    email_to_id = {}
+    if contacts_needing_lookup:
+        emails = [str(row["Email"]).strip() for row in contacts_needing_lookup]
+        emails = list(set(emails))  # Get unique emails
+        # Use read API key for lookup operations
+        lookup_headers = {
+            "Authorization": f"Bearer {read_api_key}",
+            "Content-Type": "application/json"
+        }
+        email_to_id = _lookup_contact_ids_by_emails(read_api_key, emails, lookup_headers)
+        print(f"Found {len(email_to_id)} contacts in Hubspot via email lookup")
 
-    # Process in batches
-    total_batches = (len(df) + batch_size - 1) // batch_size
-    print(f"\nImporting {len(df)} contacts to Hubspot in {total_batches} batch(es)...")
+    # Process all contacts
+    for prospect_id, row in contacts_with_id:
+        # Use the existing Prospect Id
+        contact_id = prospect_id
+        all_inputs.append({
+            "contact_id": contact_id,
+            "row": row
+        })
+    
+    for row in contacts_needing_lookup:
+        email = str(row["Email"]).strip()
+        # Use case-insensitive lookup
+        contact_id = email_to_id.get(email.lower())
+        
+        if not contact_id:
+            continue  # Skip contacts not found in Hubspot
+        
+        all_inputs.append({
+            "contact_id": contact_id,
+            "row": row
+        })
 
-    for batch_num in range(0, len(df), batch_size):
-        batch = df.iloc[batch_num:batch_num + batch_size]
-        batch_idx = (batch_num // batch_size) + 1
+    if not all_inputs:
+        print("No contacts to update (none found in Hubspot).")
+        total_contacts = len(contacts_with_id) + len(contacts_needing_lookup)
+        return {"success": 0, "failed": 0, "not_found": total_contacts}
 
-        inputs = []
-        for _, row in batch.iterrows():
-            email = str(row["Email"]).strip().lower()
-            contact_id = email_to_id.get(email)
-            
-            if not contact_id:
-                failed += 1
-                errors.append(f"Contact not found for email: {email}")
-                continue
+    # Build the actual update payloads
+    update_inputs = []
+    for item in all_inputs:
+        contact_id = item["contact_id"]
+        row = item["row"]
 
-            # Map persona name to Hubspot enum value
-            persona_name = str(row.get("Persona", "")).strip()
-            persona_enum = map_persona_to_hubspot_enum(persona_name)
+        # Map persona to Hubspot enum value
+        persona = str(row["Persona"]).strip()
+        persona_enum = map_persona_to_hubspot_enum(persona)
 
-            properties = {
-                persona_property: persona_enum
-            }
+        # Build properties object
+        properties = {
+            persona_property: persona_enum
+        }
 
-            # Add certainty if present
-            if "Persona Certainty" in row:
-                certainty_value = str(row.get("Persona Certainty", "")).strip()
-                if certainty_value:
-                    properties[certainty_property] = certainty_value
+        # Add certainty if available
+        if "Persona Certainty" in row and pd.notna(row["Persona Certainty"]):
+            properties[certainty_property] = str(row["Persona Certainty"])
 
-            inputs.append({
-                "id": contact_id,
-                "properties": properties
-            })
+        update_inputs.append({
+            "id": contact_id,
+            "properties": properties
+        })
 
-        if not inputs:
-            continue
+    if not update_inputs:
+        print("No contacts to update (none found in Hubspot).")
+        total_contacts = len(contacts_with_id) + len(contacts_needing_lookup)
+        return {"success": 0, "failed": 0, "not_found": total_contacts}
 
-        payload = {"inputs": inputs}
+    # Bulk update contacts using batch API
+    # This processes contacts in batches of 100 (HubSpot's maximum)
+    url = "https://api.hubapi.com/crm/v3/objects/contacts/batch/update"
+    success_count = 0
+    failed_count = 0
+    total_batches = (len(update_inputs) + batch_size - 1) // batch_size
+    
+    print(f"\nBulk importing {len(update_inputs)} contacts in {total_batches} batch(es)...")
+    print(f"Batch size: {batch_size} contacts per batch\n")
+
+    for i in range(0, len(update_inputs), batch_size):
+        batch = update_inputs[i:i + batch_size]
+        payload = {"inputs": batch}
+        batch_num = i // batch_size + 1
 
         try:
             response = requests.post(
                 url, headers=headers, json=payload, timeout=120
             )
             response.raise_for_status()
-            successful += len(inputs)
-            print(
-                f"Batch {batch_idx}/{total_batches}: "
-                f"Successfully updated {len(inputs)} contacts"
-            )
-
+            success_count += len(batch)
+            print(f"✓ Batch {batch_num}/{total_batches}: Successfully updated {len(batch)} contacts")
         except requests.HTTPError as e:
-            failed += len(inputs)
-            error_msg = f"Batch {batch_idx} failed: {e}"
+            failed_count += len(batch)
+            error_msg = f"Batch {batch_num}/{total_batches} failed: {e}"
             if e.response is not None:
                 try:
                     error_detail = e.response.json()
                     error_msg += f" - {error_detail}"
-                except ValueError:
+                    
+                    # Check for missing scopes error and provide helpful message
+                    if e.response.status_code == 403:
+                        errors = error_detail.get("errors", [])
+                        for error in errors:
+                            if "requiredGranularScopes" in error.get("context", {}):
+                                required_scopes = error["context"]["requiredGranularScopes"]
+                                print(f"\n⚠️  PERMISSION ERROR: Missing required HubSpot API scopes")
+                                print(f"   Your API key needs the following scopes to update contacts:")
+                                for scope in required_scopes:
+                                    print(f"     - {scope}")
+                                print(f"\n   To fix this:")
+                                print(f"   1. Go to your HubSpot account settings")
+                                print(f"   2. Navigate to Integrations > Private Apps")
+                                print(f"   3. Edit your private app")
+                                print(f"   4. Add the required scopes listed above")
+                                print(f"   5. Save and regenerate your API key if needed")
+                                print(f"\n   More info: https://developers.hubspot.com/scopes\n")
+                                break
+                except (ValueError, KeyError):
                     error_msg += f" - {e.response.text[:200]}"
-            errors.append(error_msg)
-            print(f"ERROR: {error_msg}")
+            print(f"Error: {error_msg}")
+            # Continue with next batch even if one fails
+        except Exception as e:
+            failed_count += len(batch)
+            print(f"✗ Batch {batch_num}/{total_batches} error: {e}")
 
-            # Handle rate limiting
-            if e.response and e.response.status_code == 429:
-                retry_after = int(
-                    e.response.headers.get("Retry-After", 10)
-                )
-                print(f"Rate limited. Waiting {retry_after} seconds...")
-                time.sleep(retry_after)
+    # Calculate not_found count
+    not_found_count = len(contacts_needing_lookup) - len(email_to_id)
 
-        except (requests.RequestException, ValueError, KeyError, TypeError) as e:
-            failed += len(inputs)
-            error_msg = f"Batch {batch_idx} failed with unexpected error: {e}"
-            errors.append(error_msg)
-            print(f"ERROR: {error_msg}")
+    # Print summary
+    print(f"\n{'='*60}")
+    print(f"Bulk Import Summary:")
+    print(f"  Successfully updated: {success_count}")
+    print(f"  Failed: {failed_count}")
+    print(f"  Not found: {not_found_count}")
+    print(f"  Total processed: {success_count + failed_count + not_found_count}")
+    print(f"{'='*60}\n")
 
-    result = {
-        "successful": successful,
-        "failed": failed,
-        "total": len(df),
-        "errors": errors
+    return {
+        "success": success_count,
+        "failed": failed_count,
+        "not_found": not_found_count
     }
-
-    print(
-        f"\nHubspot import complete: {successful} successful, "
-        f"{failed} failed out of {len(df)} total"
-    )
-
-    return result
-

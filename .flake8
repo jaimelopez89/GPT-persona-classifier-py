@@ -1,0 +1,4 @@
+[flake8]
+# Disable trailing whitespace warnings (W291, W293)
+ignore = W291, W293
+

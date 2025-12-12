@@ -283,8 +283,27 @@ def resolve_input_file(input_path: str | None = None) -> str:
 
         # Save to temporary CSV file
         temp_path = tempfile.mktemp(suffix=".csv", prefix="hubspot_")
+        
+        # Ensure DataFrame has the expected columns even if empty
+        expected_columns = ["Prospect Id", "Email", "Job Title", "Company"]
+        if df.empty:
+            # Create empty DataFrame with correct columns
+            df = pd.DataFrame(columns=expected_columns)
+        else:
+            # Ensure all expected columns exist (fill missing with empty strings)
+            for col in expected_columns:
+                if col not in df.columns:
+                    df[col] = ""
+        
         df.to_csv(temp_path, index=False)
         print(f"Saved {len(df)} contacts to temporary file: {temp_path}")
+        
+        if df.empty:
+            raise RuntimeError(
+                f"No contacts found in Hubspot list/segment/report. "
+                f"The list may be empty or you may not have access to the contacts."
+            )
+        
         return temp_path
 
     # Handle file paths
@@ -533,15 +552,11 @@ def prompt_and_import_to_hubspot(final_df: pd.DataFrame) -> bool:
                     print("\n" + "=" * 50)
                     print("Hubspot Import Complete")
                     print("=" * 50)
-                    print(f"Successfully updated: {results['successful']}")
+                    print(f"Successfully updated: {results['success']}")
                     print(f"Failed: {results['failed']}")
-                    print(f"Total: {results['total']}")
-                    if results['errors']:
-                        print(f"\nErrors ({len(results['errors'])}):")
-                        for error in results['errors'][:5]:
-                            print(f"  - {error}")
-                        if len(results['errors']) > 5:
-                            print(f"  ... and {len(results['errors']) - 5} more")
+                    print(f"Not found: {results['not_found']}")
+                    total = results['success'] + results['failed'] + results['not_found']
+                    print(f"Total processed: {total}")
                     return True
                 except (RuntimeError, ValueError, requests.HTTPError) as e:
                     print(f"\nError importing to Hubspot: {e}")
