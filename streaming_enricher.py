@@ -338,21 +338,43 @@ def _resolve_input_path(arg_path: str | None) -> str:
 
 if __name__ == "__main__":
     import argparse
-    ap = argparse.ArgumentParser(description="Streaming (adaptive) enrichment")
+    ap = argparse.ArgumentParser(
+        description=(
+            "Streaming (adaptive) enrichment for prospect persona classification.\n"
+            "Processes prospects and optionally imports results back to Hubspot."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  %(prog)s --input prospects.csv\n"
+            "  %(prog)s --input list:123 --hubspot-import\n"
+            "  %(prog)s --input segment:456 --hubspot-import\n"
+            "  %(prog)s --input hubspot:789 --hubspot-import\n"
+            "\n"
+            "Hubspot Import:\n"
+            "  Use --hubspot-import (or -i) to automatically import accepted prospects\n"
+            "  to Hubspot after processing. Without this flag, you will be prompted\n"
+            "  interactively whether to import.\n"
+        )
+    )
     # --input is now optional; we'll prompt if missing
     ap.add_argument(
-        "--input", required=False,
+        "--input", "-i", required=False, dest="input_path",
         help=(
-            "Path to prospects CSV, Hubspot zip file, or Hubspot list/segment ID "
-            "(e.g., 'list:123', 'segment:123', or numeric for legacy report ID). "
-            "If omitted, you will be prompted."
+            "Path to prospects CSV, Hubspot zip file, or Hubspot list/segment ID. "
+            "For Hubspot lists/segments, use format 'list:123', 'segment:123', "
+            "or 'hubspot:123'. If omitted, you will be prompted."
         )
     )
     ap.add_argument(
-        "--hubspot-import", action="store_true",
-        help="Import accepted prospects back to Hubspot after processing"
+        "--hubspot-import", "--import", action="store_true",
+        dest="hubspot_import",
+        help=(
+            "Automatically import accepted prospects to Hubspot after processing. "
+            "Without this flag, you will be prompted interactively whether to import."
+        )
     )
     args = ap.parse_args()
 
-    input_path = _resolve_input_path(args.input)
+    input_path = _resolve_input_path(args.input_path)
     main(input_path, import_to_hubspot=args.hubspot_import)
